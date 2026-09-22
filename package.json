@@ -1,0 +1,24 @@
+{
+  "name": "skkuding-study-frontend",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Day 2 NestJS 스터디 - 치킨집으로 배우는 NestJS 프론트엔드",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.0",
+    "typescript": "^5.9.0",
+    "vite": "^8.3.0"
+  }
+}
