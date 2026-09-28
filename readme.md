@@ -10,6 +10,8 @@
 
 - [day-2-nestjs](https://github.com/filename24/skkuding-study/tree/day-2-nestjs) — NestJS 백엔드 스터디 (치킨집 CRUD API)
 - [day-2-nestjs-frontend](https://github.com/filename24/skkuding-study/tree/day-2-nestjs-frontend) — NestJS API 실습용 교육 사이트 (Vite + React)
+- [day-3-nestjs](https://github.com/filename24/skkuding-study/tree/day-3-nestjs) — NestJS 백엔드 스터디 (Guard, Pipe, DTO 검증, 예외, Unit/E2E 테스트)
+- [day-3-nestjs-frontend](https://github.com/filename24/skkuding-study/tree/day-3-nestjs-frontend) — Day 3 실습용 교육 사이트 (Guard·Pipe 흐름과 400/403/404/409 재현)
 
 ## 브랜치 이동 방법
 
