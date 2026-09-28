@@ -9,7 +9,11 @@ interface RequestFormProps {
 
 function initialValues(endpoint: EndpointConfig): RequestValues {
   const values: RequestValues = {};
-  for (const field of [...(endpoint.pathParams ?? []), ...(endpoint.bodyFields ?? [])]) {
+  for (const field of [
+    ...(endpoint.pathParams ?? []),
+    ...(endpoint.bodyFields ?? []),
+    ...(endpoint.headerFields ?? []),
+  ]) {
     if (field.defaultValue !== undefined) {
       values[field.key] = String(field.defaultValue);
     }
@@ -34,14 +38,15 @@ export default function RequestForm({ endpoint, running, onSubmit }: RequestForm
     onSubmit(values);
   };
 
-  const renderField = (field: FieldDef, isPath: boolean) => (
+  const renderField = (field: FieldDef, group: 'path' | 'body' | 'header') => (
     <label
-      key={`${isPath ? 'path' : 'body'}-${field.key}`}
+      key={`${group}-${field.key}`}
       className="request-form__field"
     >
       <span className="request-form__label-text">
         {field.label}
-        {isPath && <em className="request-form__tag">URL 파라미터</em>}
+        {group === 'path' && <em className="request-form__tag">URL 파라미터</em>}
+        {group === 'header' && <em className="request-form__tag">요청 헤더</em>}
         {field.required && <em className="request-form__required">필수</em>}
       </span>
       {field.type === 'select' ? (
@@ -65,6 +70,7 @@ export default function RequestForm({ endpoint, running, onSubmit }: RequestForm
           disabled={running}
         />
       )}
+      {field.hint && <small className="request-form__hint">{field.hint}</small>}
     </label>
   );
 
@@ -72,17 +78,24 @@ export default function RequestForm({ endpoint, running, onSubmit }: RequestForm
     <form className="request-form" onSubmit={handleSubmit}>
       <p className="request-form__description">{endpoint.description}</p>
 
+      {(endpoint.headerFields?.length ?? 0) > 0 && (
+        <div className="request-form__group">
+          <h5>요청 헤더 (Header)</h5>
+          {endpoint.headerFields!.map((field) => renderField(field, 'header'))}
+        </div>
+      )}
+
       {(endpoint.pathParams?.length ?? 0) > 0 && (
         <div className="request-form__group">
           <h5>경로</h5>
-          {endpoint.pathParams!.map((field) => renderField(field, true))}
+          {endpoint.pathParams!.map((field) => renderField(field, 'path'))}
         </div>
       )}
 
       {(endpoint.bodyFields?.length ?? 0) > 0 && (
         <div className="request-form__group">
           <h5>요청 본문 (Body)</h5>
-          {endpoint.bodyFields!.map((field) => renderField(field, false))}
+          {endpoint.bodyFields!.map((field) => renderField(field, 'body'))}
         </div>
       )}
 

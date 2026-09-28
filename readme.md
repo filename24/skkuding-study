@@ -8,10 +8,27 @@
 
 - 브랜치 이름 규칙: `day-n-스터디이름` (필요시 `-v2`, `-backend` 처럼 세부 주제 추가)
 
-<!-- 스터디가 시작되면 아래에 브랜치 링크를 추가합니다. 예:
-- [day-1-git](https://github.com/사용자/skkuding-study/tree/day-1-git) — git 기초 스터디
-- [day-2-algorithm](https://github.com/사용자/skkuding-study/tree/day-2-algorithm) — 알고리즘 스터디
--->
+- [day-2-nestjs](https://github.com/filename24/skkuding-study/tree/day-2-nestjs) — NestJS 백엔드 스터디 (치킨집 CRUD API)
+- [day-2-nestjs-frontend](https://github.com/filename24/skkuding-study/tree/day-2-nestjs-frontend) — NestJS API 실습용 교육 사이트 (Vite + React)
+- [day-3-nestjs](https://github.com/filename24/skkuding-study/tree/day-3-nestjs) — NestJS 백엔드 스터디 (Guard, Pipe, DTO 검증, 예외, 테스트)
+- [day-3-nestjs-frontend](https://github.com/filename24/skkuding-study/tree/day-3-nestjs-frontend) — Day 3 실습용 교육 사이트 (Guard·Pipe 흐름을 직접 재현)
+
+## 프론트엔드 스터디 실행 방법 (day-3-nestjs-frontend)
+
+```bash
+git checkout day-3-nestjs-frontend
+pnpm install
+pnpm dev        # http://localhost:5173
+```
+
+서버 없이도 목 데이터로 동작합니다. 실제 응답을 보려면 백엔드를 먼저 켜 두세요.
+
+```bash
+git checkout day-3-nestjs
+cd chicken-project
+pnpm install
+pnpm run start:dev    # http://localhost:3000
+```
 
 ## 브랜치 이동 방법
 

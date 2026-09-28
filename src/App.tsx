@@ -8,7 +8,10 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>🍗 치킨집으로 배우는 NestJS</h1>
-        <p>치킨집의 구성원으로 이해하는 NestJS 핵심 개념과, 요청 데이터가 흘러가는 실시간 과정</p>
+        <p>
+          Guard·Pipe·Exception·테스트까지, 치킨집의 구성원으로 이해하는 NestJS 핵심 개념과 요청 데이터가
+          흘러가는 실시간 과정
+        </p>
       </header>
       <SplitLayout
         left={<EducationPanel />}

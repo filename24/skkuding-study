@@ -10,11 +10,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 엔드포인트 설정(endpoints.ts)과 폼 입력값으로 실제 요청(URL·method·body)을 만듭니다.
+// 엔드포인트 설정(endpoints.ts)과 폼 입력값으로 실제 요청(URL·헤더·method·body)을 만듭니다.
 export function buildRequest(endpoint: EndpointConfig, values: RequestValues): RequestInfo {
   let path = endpoint.pathTemplate;
   for (const param of endpoint.pathParams ?? []) {
     path = path.replace(`:${param.key}`, encodeURIComponent((values[param.key] ?? '').trim()));
+  }
+
+  // Guard가 보는 요청 헤더(x-api-key)를 함께 만듭니다.
+  const headers: Record<string, string> = {};
+  for (const field of endpoint.headerFields ?? []) {
+    const raw = (values[field.key] ?? '').trim();
+    if (raw !== '') {
+      headers[field.key] = raw;
+    }
   }
 
   let body: unknown = null;
@@ -30,7 +39,11 @@ export function buildRequest(endpoint: EndpointConfig, values: RequestValues): R
     }
   }
 
-  return { method: endpoint.method, url: `${BASE_URL}${path}`, body };
+  if (body !== null) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  return { method: endpoint.method, url: `${BASE_URL}${path}`, headers, body };
 }
 
 // 요청을 실제로 보내고, 네트워크 실패(서버 꺼짐 등) 시 데모 모드(목 데이터)로 폴백합니다.
@@ -44,7 +57,7 @@ export async function sendRequest(
   try {
     const response = await fetch(request.url, {
       method: request.method,
-      headers: request.body !== null ? { 'Content-Type': 'application/json' } : undefined,
+      headers: Object.keys(request.headers).length > 0 ? request.headers : undefined,
       body: request.body !== null ? JSON.stringify(request.body) : undefined,
     });
     const text = await response.text();
@@ -62,6 +75,7 @@ export async function sendRequest(
       mode: 'live',
       method: request.method,
       url: request.url,
+      requestHeaders: request.headers,
       requestBody: request.body,
     };
   } catch {

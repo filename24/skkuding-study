@@ -26,13 +26,13 @@ export default function PlaygroundPanel({ endpoints }: PlaygroundPanelProps) {
     <div className="playground-panel">
       <header className="panel-header">
         <h2>📡 실시간 데이터 흐름</h2>
-        <p>HTTP 요청이 치킨집 안에서 어떻게 처리되는지 단계별로 지켜보세요.</p>
+        <p>Guard(출입 검사) → Pipe(주문서 검사)를 거쳐 HTTP 요청이 처리되는 순서를 지켜보세요.</p>
       </header>
 
       {mode === 'demo' && (
         <div className="playground-panel__demo-banner" role="status">
           백엔드 서버가 꺼져 있어 <strong>목 데이터</strong>로 데모 중입니다.{' '}
-          <code>day-2-nestjs</code> 브랜치의 서버를 켜면 실제 응답을 볼 수 있어요.
+          <code>day-3-nestjs</code> 브랜치의 서버를 켜면 실제 응답을 볼 수 있어요.
         </div>
       )}
 

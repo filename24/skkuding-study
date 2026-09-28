@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Day 2 NestJS 스터디 - 치킨집으로 배우는 NestJS 프론트엔드",
+  "description": "Day 3 NestJS 스터디 - Guard/Pipe/테스트를 치킨집으로 배우는 프론트엔드",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
