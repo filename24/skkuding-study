@@ -194,11 +194,33 @@ Guard(403)·Pipe(400)·Exception(404/409)이 각각 제 역할을 하는지 확�
 
 ## API 테스트 (Bruno)
 
-`bruno/chicken-api/`에 요청 모음이 있습니다.
+`bruno/chicken-api/`에 요청 모음이 있습니다. 컬렉션 루트(`bruno.json`)가 있는
+**`bruno/chicken-api/` 디렉터리 자체를 열어야** Bruno가 컬렉션으로 인식합니다.
 
-1. [Bruno](https://www.usebruno.com/) 설치
+1. [Bruno](https://www.usebruno.com/) 설치 (CLI는 `npm i -g @usebruno/cli`)
 2. `pnpm run start:dev`로 서버를 켭니다
-3. Bruno에서 `chicken-api` 컬렉션을 열고 `local` 환경을 선택합니다
+3. Bruno 앱에서는 `bruno/chicken-api` 폴더를 열거나, CLI로는 컬렉션 폴더에서 실행합니다
+
+```bash
+cd bruno/chicken-api
+bru run                       # 컬렉션 전체 실행
+bru run -r "05-에러 케이스"   # 특정 폴더만 실행
+```
+
+환경은 `environments/local.bru`이며 `bruno.json`의
+`presets.defaultEnvironment`로 `local`이 지정돼 있어 별도 선택이 필요 없습니다.
+값은 `baseUrl`, `apiKey` 두 가지입니다.
+
+```text
+01-조회          200, 200
+02-등록          201
+03-수정          200
+04-삭제          200
+05-에러 케이스   400, 201(알 수 없는 필드는 잘려 나감), 400, 404, 403, 403, 409
+```
+
+`bru run` 결과의 상태코드가 위와 다르면 서버가 안 떠 있는 것입니다.
+
 4. 요청을 하나씩 실행하면서 **기대 상태코드**와 compare해 봅니다
 
 `05-에러 케이스` 폴더가 이번 주의 핵심입니다.
@@ -206,6 +228,10 @@ Guard(403)·Pipe(400)·Exception(404/409)이 각각 제 역할을 하는지 확�
 
 수정 요청이 전부 403으로 막히는다면 헤더의 `x-api-key` 값을
 `{{apiKey}}`로 지정했는지 확인하세요.
+
+> `No Bruno collections found. Couldn't find a bruno.json or opencollection.yml`
+> 이 나오면 컬렉션 폴더(`bruno/chicken-api`)이 아니라 그 위쪽에서 실행한 것입니다.
+> `bruno.json`이 있는 폴더로 이동하거나 `bru run bruno/chicken-api`처럼 경로를 넘기세요.
 
 ## 더 해보면 좋을 것
 

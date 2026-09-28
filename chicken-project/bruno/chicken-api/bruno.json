@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "chicken-api",
+  "type": "collection",
+  "ignore": ["node_modules", ".git"],
+  "presets": {
+    "defaultEnvironment": "local"
+  }
+}
