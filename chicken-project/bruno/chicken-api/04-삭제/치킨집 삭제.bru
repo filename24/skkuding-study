@@ -1,0 +1,27 @@
+meta {
+  name: 치킨집 삭제
+  type: http
+  seq: 1
+}
+
+delete {
+  url: {{baseUrl}}/chicken/3
+  body: none
+  auth: none
+}
+
+headers {
+  x-api-key: {{apiKey}}
+}
+
+docs {
+  # DELETE /chicken/:id — 치킨집 삭제
+
+  **기대: 200 OK**
+
+  삭제된 가게 정보가 그대로 돌아옵니다.
+  한 번 삭제한 뒤 같은 요청을 다시 보내면 404가 옵니다.
+
+  Body는 없지만, 삭제는 데이터를 바꾸는 요청이므로 **Guard를 지나야 합니다.**
+  Body 검증(Pipe)이 필요한 요청은 Body가 있는 등록·수정뿐입니다.
+}

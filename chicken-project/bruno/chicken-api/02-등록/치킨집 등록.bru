@@ -1,0 +1,41 @@
+meta {
+  name: 치킨집 등록
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/chicken
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "BBQ 비타민점",
+    "type": "HONEY",
+    "price": 22000,
+    "address": "경기 수원시 영통구 매탄로 42",
+    "phone": "031-290-0004"
+  }
+}
+
+docs {
+  # POST /chicken — 신규 치킨집 등록
+
+  **기대: 201 Created**
+
+  이 요청은 두 개의 직원을 거칩니다.
+
+  1. **Guard (출입 검사)** — `x-api-key` 헤더가 `chicken-admin-key`와 같아야 통과합니다.
+  2. **ValidationPipe (주문서 검사)** — Body가 `CreateChickenDto`의 규칙을 만족해야 통과합니다.
+
+  둘 중 하나라도 어기면 컨트롤러나 서비스에 도달하지 못합니다.
+
+  `id`는 손님이 정하는 게 아니라 서버가 붙여 줍니다(여기서는 4).
+}

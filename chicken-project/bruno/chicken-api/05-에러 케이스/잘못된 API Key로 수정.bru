@@ -1,0 +1,32 @@
+meta {
+  name: 잘못된 API Key로 수정 → 403
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{baseUrl}}/chicken/1
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  x-api-key: wrong-key
+}
+
+body:json {
+  {
+    "price": 1000
+  }
+}
+
+docs {
+  # 잘못된 API Key — Guard가 거절 (기대: 403 Forbidden)
+
+  헤더가 있는지만 확인하는 게 아니라 값이 일치하는지까지 확인합니다.
+  조작하기 어려운 랜덤 문자열을 요구하지 않아도, 누군가에게서 넘겨받은 값이어야 합니다.
+
+  실제 서비스에서는 이 값이 **비밀번호 역할**을 하므로
+  코드에 직접 적지 않고 환경변수(`process.env.API_KEY`)로 주입합니다.
+}

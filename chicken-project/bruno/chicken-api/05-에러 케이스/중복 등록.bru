@@ -1,0 +1,39 @@
+meta {
+  name: 중복 등록 → 409
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/chicken
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "성대통닭 율전본점",
+    "type": "FRIED",
+    "price": 18000,
+    "address": "경기 수원시 장안구 율전로108번길 11",
+    "phone": "031-290-0001"
+  }
+}
+
+docs {
+  # 같은 상호로 다시 등록 — ConflictException (기대: 409 Conflict)
+
+  Guard도 통과했고, 주문서도 완벽합니다.
+  그런데 서비스가 "이미 같은 상호의 가게가 있네요"라고 알려줍니다.
+
+  ```json
+  { "message": "이미 해당 치킨집 정보가 존재합니다.", "statusCode": 409 }
+  ```
+
+  400(요청이 틀림)과 409(요건은 맞지만 현재 상태와 충돌)의 차이를 구분해 보세요.
+}

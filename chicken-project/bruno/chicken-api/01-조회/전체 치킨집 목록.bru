@@ -1,0 +1,28 @@
+meta {
+  name: 전체 치킨집 목록
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/chicken
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /chicken — 전체 치킨집 목록
+
+  **기대: 200 OK**
+
+  Guard가 걸린 API가 아니고 Body도 없으므로, 요청이 그대로
+  컨트롤러 → 서비스까지 도달해 장부(`chickens.json`)를 다 읽어옵니다.
+
+  ```json
+  {
+    "chickens": [
+      { "id": 1, "name": "성대통닭 율전본점", "type": "FRIED", "price": 18000, ... }
+    ]
+  }
+  ```
+}

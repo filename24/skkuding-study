@@ -1,0 +1,26 @@
+meta {
+  name: 숫자가 아닌 id로 조회 → 400
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/chicken/chicken
+  body: none
+  auth: none
+}
+
+docs {
+  # 숫자가 아닌 id — ParseIntPipe가 거절 (기대: 400 Bad Request)
+
+  URL로 들어오는 값은 **항상 문자열**입니다.
+  `ParseIntPipe`가 숫자로 바꿔 주지 못하면 요청을 거절합니다.
+
+  ```json
+  { "message": "Validation failed (parsint is expected)", "statusCode": 400 }
+  ```
+
+  Pipe는 **요청 데이터 자체가 유효한지**를 봅니다.
+  숫자로 변환될 수 있는지만 확인할 뿐, 그런 가게가 있는지는 모릅니다.
+  그건 서비스의 몫입니다.
+}

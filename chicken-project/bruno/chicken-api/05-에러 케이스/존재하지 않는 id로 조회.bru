@@ -1,0 +1,27 @@
+meta {
+  name: 존재하지 않는 id로 조회 → 404
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/chicken/999
+  body: none
+  auth: none
+}
+
+docs {
+  # 존재하지 않는 id — NotFoundException (기대: 404 Not Found)
+
+  Pipe는 `999`가 숫자라는 것까지만 확인했고 통과시켜 줍니다.
+  그다음 서비스가 장부를 뒤져 봤는데 그런 가게가 없어서 예외를 던집니다.
+
+  ```json
+  { "message": "해당 치킨집 정보가 존재하지 않습니다.", "statusCode": 404 }
+  ```
+
+  - **Pipe**: 요청 데이터 자체를 확인 (변환, 형식 검사)
+  - **Service**: 실제 데이터가 존재하는지 확인
+
+  검사해야 하는 문제가 다르기 때문에 서로 다른 곳에서 처리합니다.
+}

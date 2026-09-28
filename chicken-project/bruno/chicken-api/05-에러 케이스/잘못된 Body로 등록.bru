@@ -1,0 +1,50 @@
+meta {
+  name: 잘못된 Body로 등록 → 400
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/chicken
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "",
+    "address": 123,
+    "phone": null,
+    "type": "SPICY",
+    "price": "abc"
+  }
+}
+
+docs {
+  # 잘못된 Body — ValidationPipe가 거절 (기대: 400 Bad Request)
+
+  **Guard는 통과했지만, 주문서 검사에서 걸러졌습니다.**
+
+  응답으로 어떤 규칙을 어겼는지 나열됩니다.
+
+  ```json
+  {
+    "message": [
+      "name should not be empty",
+      "type must be one of the following values: FRIED, SEASONED, SOY, GARLIC, HONEY",
+      "price must be an integer number",
+      "address must be a string",
+      "phone must be a string"
+    ],
+    "statusCode": 400
+  }
+  ```
+
+  중요한 점은 **컨트롤러와 서비스에 한 번도 도달하지 않았다**는 것입니다.
+  잘못된 주문은 주방장에게 넘기지 않고 입구에서 막습니다.
+}

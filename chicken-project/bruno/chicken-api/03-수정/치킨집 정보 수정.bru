@@ -1,0 +1,38 @@
+meta {
+  name: 치킨집 정보 수정
+  type: http
+  seq: 1
+}
+
+patch {
+  url: {{baseUrl}}/chicken/1
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "price": 19000
+  }
+}
+
+docs {
+  # PATCH /chicken/:id — 치킨집 정보 일부 수정
+
+  **기대: 200 OK**
+
+  `UpdateChickenDto`의 모든 필드는 `@IsOptional()`이라
+  보내지 않은 값은 그대로 유지되고, 보낸 값만 덮어써집니다.
+
+  ```json
+  { "id": 1, "name": "성대통닭 율전본점", "price": 19000, ... }
+  ```
+
+  아무것도 안 보내고 보내면 변경 없이 그대로 돌아옵니다.
+  `type: "SPICY"`처럼 메뉴판에 없는 값을 보내면 400으로 거절됩니다.
+}

@@ -1,0 +1,56 @@
+meta {
+  name: API Key 없이 등록 → 403
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/chicken
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "키 없이 등록 시도",
+    "type": "FRIED",
+    "price": 10000,
+    "address": "수원시",
+    "phone": "031-000-0000"
+  }
+}
+
+docs {
+  # API Key 없음 — Guard가 거절 (기대: 403 Forbidden)
+
+  **주문서는 멀쩡한데도 막혔습니다.**
+
+  Guard는 주문서 내용과 상관없이 먼저 "이 사람이 직원인가"만 봅니다.
+  `x-api-key` 헤더가 없으므로 `canActivate()`가 `false`를 반환했고,
+  NestJS가 요청을 거절합니다.
+
+  ```json
+  { "message": "Forbidden resource", "statusCode": 403 }
+  ```
+
+  ### 그런데 401이 아니라 403인 이유
+
+  `Guard`가 `false`를 반환하면 NestJS는 기본적으로 **403 Forbidden**을 보냅니다.
+  그런데 이 상황의 본질은 "신원을 확인하지 못했다"이므로
+  엄밀히는 **401 Unauthorized**가 더 맞습니다.
+
+  ```ts
+  // guards/api-key.guard.ts
+  if (request.headers['x-api-key'] !== API_KEY) {
+    throw new UnauthorizedException('유효한 x-api-key가 필요합니다.');
+  }
+  return true;
+  ```
+
+  이 실습은 Guard의 역할에 집중하기 위해 스터디 본문의 코드를 그대로 따랐습니다.
+  실제 프로젝트에서는 401/403을 구분해 사용하세요.
+}
