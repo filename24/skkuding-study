@@ -1,0 +1,32 @@
+meta {
+  name: 낙관적 락(OCC) 치킨집 정보 수정
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/chicken/1/occ
+  body: json
+  auth: none
+}
+
+headers {
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "version": 0,
+    "price": 18500
+  }
+}
+
+docs {
+  # PATCH /chicken/1/occ — 낙관적 동시성 제어(OCC)
+
+  **기대: 200 OK**
+
+  내가 읽었던 version(예: 0)과 DB의 현재 version이 같을 때만 수정하고,
+  버전을 1 증가시킵니다. 다른 요청이 이미 수정하여 버전이 변경되었다면
+  수정되지 않고 409 Conflict가 반환됩니다.
+}

@@ -1,36 +1,32 @@
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { ChickenType } from '@prisma/client';
 
-/**
- * 치킨 메뉴 종류를 정해진 옵션으로 고정하는 열거형(Enum).
- *
- * 메뉴판에 없는 메뉴를 손님이 주문하면 주방장이 곤란하듯,
- * 이 목록에 없는 값은 `@IsEnum` 검증에서 걸러집니다.
- */
-export enum ChickenType {
-  FRIED = 'FRIED', // 후라이드 치킨
-  SEASONED = 'SEASONED', // 양념 치킨
-  SOY = 'SOY', // 간장 치킨
-  GARLIC = 'GARLIC', // 마늘 치킨
-  HONEY = 'HONEY', // 허니 치킨
-}
+export { ChickenType };
 
 /**
  * 신규 치킨집 등록용 주문서 양식.
- *
- * 필드에 붙은 class-validator 데코레이터가 "이 주문서가 양식에 맞게 작성되었는지 검사할 규칙"입니다.
- * {@link setupApp}에서 등록한 전역 `ValidationPipe`가 요청마다 이 규칙을 실행합니다.
  */
 export class CreateChickenDto {
-  /** 상호명. 비어 있거나 숫자 같은 값이 들어오면 400으로 거절됩니다. */
+  /** 상호명. 중복될 수 없습니다. */
   @IsString()
   @IsNotEmpty()
   name: string;
 
-  /** 치킨 종류. 메뉴판에 있는 값(FRIED, SEASONED, ...)만 허용합니다. */
+  /** 치킨 종류. */
   @IsEnum(ChickenType)
   type: ChickenType;
 
-  /** 가격(원). 0원 이상의 정수만 허용합니다. */
+  /** 가격(원). 0원 이상 */
   @IsInt()
   @Min(0)
   price: number;
@@ -44,36 +40,109 @@ export class CreateChickenDto {
   @IsString()
   @IsNotEmpty()
   phone: string;
+
+  /** 초기 재고 수량 (기본값: 10) */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  stock?: number;
+
+  /** 매운맛 단계 (마이그레이션 실습 필드, 기본값: 0) */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  spicyLevel?: number;
 }
 
 /**
  * 치킨집 정보 수정용 주문서 양식.
- *
- * `@IsOptional()`은 "값이 아예 없으면 통과시키는" 규칙입니다.
- * 덕분에 가격만 바꾸고 싶을 때 address/phone을 억지로 넣지 않아도 됩니다.
- * 대상 가게는 id로 지정하므로 `name`은 수정할 수 없습니다.
  */
 export class UpdateChickenDto {
-  /** 바꿀 치킨 종류. */
   @IsOptional()
   @IsEnum(ChickenType)
   type?: ChickenType;
 
-  /** 바꿀 가격(원). */
   @IsOptional()
   @IsInt()
   @Min(0)
   price?: number;
 
-  /** 바꿀 주소. */
   @IsOptional()
   @IsString()
   @IsNotEmpty()
   address?: string;
 
-  /** 바꿀 전화번호. */
   @IsOptional()
   @IsString()
   @IsNotEmpty()
   phone?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  stock?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  spicyLevel?: number;
+}
+
+/**
+ * 대량 치킨집 등록용 DTO (Prisma createMany 실습용).
+ */
+export class BatchCreateChickenDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateChickenDto)
+  chickens: CreateChickenDto[];
+}
+
+/**
+ * 원자적 재고 변경용 DTO (Atomic Update 실습용).
+ */
+export class UpdateStockDto {
+  @IsInt()
+  quantity: number;
+}
+
+/**
+ * 낙관적 동시성 제어(OCC)를 사용한 치킨 정보 수정 DTO.
+ */
+export class OccUpdateChickenDto extends UpdateChickenDto {
+  /** 내가 읽었던 당시의 버전 번호 (필수) */
+  @IsInt()
+  @Min(0)
+  version: number;
+}
+
+/**
+ * 치킨 목록 조회 쿼리 파라미터 DTO (페이지네이션 및 프로젝션 실습용).
+ */
+export class QueryChickenDto {
+  /** Offset 페이지 번호 (1부터 시작) */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  /** 가져올 개수 (기본 10) */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number = 10;
+
+  /** Cursor 기준 ID (이 ID 다음부터 조회) */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  cursor?: number;
+
+  /** 프로젝션 모드 ('all' | 'select' | 'omit') */
+  @IsOptional()
+  @IsString()
+  projection?: 'all' | 'select' | 'omit' = 'all';
 }

@@ -1,0 +1,20 @@
+meta {
+  name: 전체 치킨집 목록 (Omit 프로젝션)
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/chicken?projection=omit
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /chicken?projection=omit — 민감/불필요 필드 제외하기
+
+  **기대: 200 OK**
+
+  `omit: { createdAt: true, updatedAt: true }`를 통해
+  기본적으로 전체 필드를 가져오되 지정한 필드만 제외하고 응답합니다.
+}

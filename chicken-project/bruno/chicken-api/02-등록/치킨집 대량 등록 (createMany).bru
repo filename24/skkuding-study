@@ -1,0 +1,49 @@
+meta {
+  name: 치킨집 대량 등록 (createMany)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/chicken/batch
+  body: json
+  auth: none
+}
+
+headers {
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "chickens": [
+      {
+        "name": "푸라닭 율전점",
+        "type": "GARLIC",
+        "price": 21900,
+        "address": "경기 수원시 장안구 율전로 50",
+        "phone": "031-290-7777",
+        "stock": 10,
+        "spicyLevel": 1
+      },
+      {
+        "name": "노랑통닭 성대역점",
+        "type": "FRIED",
+        "price": 19000,
+        "address": "경기 수원시 장안구 서부로 2105",
+        "phone": "031-290-8888",
+        "stock": 15,
+        "spicyLevel": 0
+      }
+    ]
+  }
+}
+
+docs {
+  # POST /chicken/batch — 여러 치킨집 일괄 등록
+
+  **기대: 201 Created**
+
+  Prisma의 `createMany({ skipDuplicates: true })`를 사용하여
+  대량 데이터를 단일 쿼리로 데이터베이스에 삽입합니다.
+}

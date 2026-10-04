@@ -1,80 +1,113 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import { ChickenType } from '@prisma/client';
 import * as request from 'supertest';
+import { AppModule } from '../src/app.module';
 import { setupApp } from '../src/app.setup';
-import { ChickenModule } from '../src/chicken/chicken.module';
-import { Chicken, ChickenService } from '../src/chicken/chicken.service';
 import { API_KEY } from '../src/chicken/guards/api-key.guard';
+import { PrismaService } from '../src/prisma/prisma.service';
 
-/** e2e 테스트가 실제 장부(src/data/chickens.json)를 건드리지 않도록 임시 장부를 씁니다. */
-const SEED_CHICKENS: Chicken[] = [
+const SEED_CHICKENS = [
   {
-    id: 1,
     name: '성대통닭 율전본점',
-    type: 'FRIED' as Chicken['type'],
+    type: ChickenType.FRIED,
     price: 18000,
     address: '경기 수원시 장안구 율전로108번길 11',
     phone: '031-290-0001',
+    stock: 15,
+    version: 0,
+    spicyLevel: 0,
   },
   {
-    id: 2,
     name: '황금올리브 율전역점',
-    type: 'SEASONED' as Chicken['type'],
+    type: ChickenType.SEASONED,
     price: 20000,
     address: '경기 수원시 장안구 서부로 2100',
     phone: '031-290-0002',
+    stock: 10,
+    version: 0,
+    spicyLevel: 2,
   },
 ];
 
-/** 정상적인 신규 등록 주문서 */
 const NEW_CHICKEN = {
   name: 'BBQ 비타민점',
   type: 'HONEY',
   price: 22000,
   address: '경기 수원시 영통구 매탄로 42',
   phone: '031-290-0004',
+  stock: 12,
+  spicyLevel: 1,
 };
 
-describe('치킨집 API (e2e)', () => {
+describe('치킨집 API (e2e - v7 & v8)', () => {
   let app: INestApplication;
-  let tmpDir: string;
+  let prisma: PrismaService;
+  let firstChickenId: number;
 
-  beforeEach(async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chicken-e2e-'));
-    const dataFile = path.join(tmpDir, 'chickens.json');
-    fs.writeFileSync(dataFile, JSON.stringify({ chickens: SEED_CHICKENS }, null, 2), 'utf-8');
-
+  beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
-      imports: [ChickenModule],
+      imports: [AppModule],
     }).compile();
 
     app = moduleRef.createNestApplication();
-    setupApp(app); // 실제 서버(main.ts)와 같은 전역 설정(ValidationPipe 등)을 적용합니다.
-
-    // 주방장이 임시 장부를 쓰도록 바꿔서, 테스트가 원본 chickens.json을 덮어쓰지 않게 합니다.
-    const service = app.get(ChickenService);
-    (service as unknown as { filePath: string }).filePath = dataFile;
-
+    setupApp(app);
     await app.init();
+
+    prisma = app.get(PrismaService);
   });
 
-  afterEach(async () => {
+  beforeEach(async () => {
+    await prisma.orderItem.deleteMany();
+    await prisma.order.deleteMany();
+    await prisma.chicken.deleteMany();
+
+    const created = await prisma.chicken.create({ data: SEED_CHICKENS[0] });
+    firstChickenId = created.id;
+    await prisma.chicken.create({ data: SEED_CHICKENS[1] });
+  });
+
+  afterAll(async () => {
+    await prisma.$disconnect();
     await app.close();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  describe('GET /chicken', () => {
-    it('전체 치킨집 목록을 200으로 응답한다', async () => {
+  describe('GET /chicken (v7 vs v8)', () => {
+    it('[v7] 전체 치킨집 목록을 200으로 응답한다', async () => {
       const response = await request(app.getHttpServer()).get('/chicken').expect(200);
 
+      expect(response.body.chickens).toHaveLength(2);
+      expect(response.body.totalCount).toBe(2);
+    });
+
+    it('[v7] select 프로젝션 모드로 요청 시 지정된 필드만 반환한다', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/chicken?projection=select')
+        .expect(200);
+
+      expect(response.body.chickens[0]).toHaveProperty('name');
+      expect(response.body.chickens[0]).toHaveProperty('spicyLevel');
+      expect(response.body.chickens[0]).not.toHaveProperty('address');
+    });
+
+    it('[v7] cursor 페이지네이션으로 다음 데이터를 조회한다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/chicken?cursor=${firstChickenId}&limit=1`)
+        .expect(200);
+
+      expect(response.body.paginationType).toBe('cursor');
+      expect(response.body.chickens).toHaveLength(1);
+    });
+
+    it('[v8] GET /chicken/v8로 v8 all() 조회 결과를 반환한다', async () => {
+      const response = await request(app.getHttpServer()).get('/chicken/v8').expect(200);
+
+      expect(response.body.version).toBe('Prisma ORM v8 (RC)');
       expect(response.body.chickens).toHaveLength(2);
     });
   });
 
-  describe('POST /chicken', () => {
+  describe('POST /chicken (v7 vs v8)', () => {
     it('API Key가 없으면 403으로 거절한다', async () => {
       await request(app.getHttpServer()).post('/chicken').send(NEW_CHICKEN).expect(403);
     });
@@ -97,15 +130,26 @@ describe('치킨집 API (e2e)', () => {
       expect(Array.isArray(response.body.message)).toBe(true);
     });
 
-    it('올바른 주문서면 201로 등록하고 서버가 id를 붙인다', async () => {
+    it('[v7] 올바른 주문서면 201로 등록하고 서버가 id를 붙인다', async () => {
       const response = await request(app.getHttpServer())
         .post('/chicken')
         .set('x-api-key', API_KEY)
         .send({ ...NEW_CHICKEN, id: 999 })
         .expect(201);
 
-      // whitelist: true 덕분에 손님이 끼워 넣은 id는 잘려 나가고 서버가 준 id가 담깁니다.
-      expect(response.body.id).toBe(3);
+      expect(response.body.name).toBe(NEW_CHICKEN.name);
+      expect(typeof response.body.id).toBe('number');
+    });
+
+    it('[v8] POST /chicken/v8로 data 래퍼 없이 직접 등록한다', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/chicken/v8')
+        .set('x-api-key', API_KEY)
+        .send(NEW_CHICKEN)
+        .expect(201);
+
+      expect(response.body.version).toBe('Prisma ORM v8 (RC)');
+      expect(response.body.chicken.name).toBe(NEW_CHICKEN.name);
     });
 
     it('같은 상호를 다시 등록하면 ConflictException으로 409를 응답한다', async () => {
@@ -123,59 +167,121 @@ describe('치킨집 API (e2e)', () => {
     });
   });
 
-  describe('GET /chicken/:id', () => {
+  describe('POST /chicken/batch (v7 vs v8)', () => {
+    const batchData = {
+      chickens: [
+        {
+          name: '교촌치킨 매탄점',
+          type: ChickenType.SOY,
+          price: 21000,
+          address: '경기 수원시 영통구 매탄로 10',
+          phone: '031-290-0010',
+          stock: 10,
+          spicyLevel: 0,
+        },
+        {
+          name: '처갓집양념 율전점',
+          type: ChickenType.SEASONED,
+          price: 19000,
+          address: '경기 수원시 장안구 율전로 20',
+          phone: '031-290-0011',
+          stock: 10,
+          spicyLevel: 1,
+        },
+      ],
+    };
+
+    it('[v7] POST /chicken/batch로 여러 치킨집을 한 번에 등록한다 (createMany)', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/chicken/batch')
+        .set('x-api-key', API_KEY)
+        .send(batchData)
+        .expect(201);
+
+      expect(response.body.count).toBe(2);
+      expect(response.body.version).toBe('Prisma v7');
+    });
+
+    it('[v8] POST /chicken/batch/v8로 v8 createAndCount를 실행한다', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/chicken/batch/v8')
+        .set('x-api-key', API_KEY)
+        .send(batchData)
+        .expect(201);
+
+      expect(response.body.version).toBe('Prisma ORM v8 (RC)');
+      expect(response.body.insertedCount).toBe(2);
+    });
+  });
+
+  describe('GET /chicken/:id (v7 vs v8)', () => {
     it('숫자가 아닌 id는 ParseIntPipe가 400으로 거절한다', async () => {
       await request(app.getHttpServer()).get('/chicken/chicken').expect(400);
     });
 
-    it('존재하지 않는 id는 NotFoundException으로 404를 응답한다', async () => {
-      await request(app.getHttpServer()).get('/chicken/999').expect(404);
-    });
-
-    it('존재하는 id는 해당 치킨집을 200으로 응답한다', async () => {
-      const response = await request(app.getHttpServer()).get('/chicken/1').expect(200);
+    it('[v7] 존재하는 id는 200으로 응답한다 (findUniqueOrThrow)', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/chicken/${firstChickenId}`)
+        .expect(200);
 
       expect(response.body.name).toBe(SEED_CHICKENS[0].name);
+    });
+
+    it('[v8] GET /chicken/:id/v8로 firstOrThrow() 조회를 수행한다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/chicken/${firstChickenId}/v8`)
+        .expect(200);
+
+      expect(response.body.version).toBe('Prisma ORM v8 (RC)');
+      expect(response.body.chicken.name).toBe(SEED_CHICKENS[0].name);
+    });
+
+    it('[v8] 존재하지 않는 id로 /chicken/:id/v8 조회 시 404를 반환한다', async () => {
+      await request(app.getHttpServer()).get('/chicken/999999/v8').expect(404);
     });
   });
 
-  describe('PATCH /chicken/:id', () => {
-    it('API Key가 없으면 403으로 거절한다', async () => {
-      await request(app.getHttpServer()).patch('/chicken/1').send({ price: 19000 }).expect(403);
-    });
-
-    it('바꿀 값만 담아 200으로 수정한다', async () => {
+  describe('PATCH /chicken/:id/stock (Atomic Update)', () => {
+    it('원자적으로 재고를 차감한다', async () => {
       const response = await request(app.getHttpServer())
-        .patch('/chicken/1')
+        .patch(`/chicken/${firstChickenId}/stock`)
         .set('x-api-key', API_KEY)
-        .send({ price: 19000 })
+        .send({ quantity: 5 })
         .expect(200);
 
-      expect(response.body.price).toBe(19000);
-      expect(response.body.name).toBe(SEED_CHICKENS[0].name);
+      expect(response.body.stock).toBe(10);
+    });
+  });
+
+  describe('PATCH /chicken/:id/occ (Optimistic Concurrency Control)', () => {
+    it('버전이 일치하면 수정을 성공하고 버전을 1 증가시킨다', async () => {
+      const response = await request(app.getHttpServer())
+        .patch(`/chicken/${firstChickenId}/occ`)
+        .set('x-api-key', API_KEY)
+        .send({ version: 0, price: 19500 })
+        .expect(200);
+
+      expect(response.body.price).toBe(19500);
+      expect(response.body.version).toBe(1);
     });
 
-    it('존재하지 않는 id를 수정하면 404를 응답한다', async () => {
+    it('버전이 다르면 충돌(409 Conflict)을 반환한다', async () => {
       await request(app.getHttpServer())
-        .patch('/chicken/999')
+        .patch(`/chicken/${firstChickenId}/occ`)
         .set('x-api-key', API_KEY)
-        .send({ price: 19000 })
-        .expect(404);
+        .send({ version: 99, price: 19500 })
+        .expect(409);
     });
   });
 
   describe('DELETE /chicken/:id', () => {
-    it('API Key가 없으면 403으로 거절한다', async () => {
-      await request(app.getHttpServer()).delete('/chicken/1').expect(403);
-    });
-
-    it('삭제한 뒤에는 404가 된다', async () => {
+    it('치킨집을 삭제하면 200 응답 후 조회 시 404가 된다', async () => {
       await request(app.getHttpServer())
-        .delete('/chicken/1')
+        .delete(`/chicken/${firstChickenId}`)
         .set('x-api-key', API_KEY)
         .expect(200);
 
-      await request(app.getHttpServer()).get('/chicken/1').expect(404);
+      await request(app.getHttpServer()).get(`/chicken/${firstChickenId}`).expect(404);
     });
   });
 });

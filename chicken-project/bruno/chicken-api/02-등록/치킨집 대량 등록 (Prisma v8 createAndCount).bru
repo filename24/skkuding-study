@@ -1,0 +1,50 @@
+meta {
+  name: 치킨집 대량 등록 (Prisma v8 createAndCount)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/chicken/batch/v8
+  body: json
+  auth: none
+}
+
+headers {
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "chickens": [
+      {
+        "name": "자담치킨 율전점",
+        "type": "GARLIC",
+        "price": 22000,
+        "address": "경기 수원시 장안구 율전로 60",
+        "phone": "031-290-6666",
+        "stock": 10,
+        "spicyLevel": 1
+      },
+      {
+        "name": "바른치킨 수원성대점",
+        "type": "SOY",
+        "price": 20000,
+        "address": "경기 수원시 장안구 서부로 2090",
+        "phone": "031-290-5555",
+        "stock": 15,
+        "spicyLevel": 0
+      }
+    ]
+  }
+}
+
+docs {
+  # POST /chicken/batch/v8 — Prisma v8 createAndCount
+
+  **기대: 201 Created**
+
+  v7의 `skipDuplicates: true` 대신 `onConflict: 'skip'` 옵션을 사용하는
+  `db.orm.public.Chicken.createAndCount(..., { onConflict: 'skip' })`를 호출하여
+  삽입된 행의 개수를 즉시 반환받습니다.
+}

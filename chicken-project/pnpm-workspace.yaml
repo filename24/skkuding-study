@@ -1,3 +1,16 @@
 allowBuilds:
   '@parcel/watcher': true
   unrs-resolver: true
+  '@prisma/engines': true
+  prisma: true
+  '@prisma/client': true
+  '@prisma/prisma7': true
+  esbuild: true
+  workerd: true
+  msgpackr-extract: true
+
+overrides:
+  '@prisma/orm-toolchain': '8.0.0-rc.14'
+  '@prisma/orm-framework': '8.0.0-rc.14'
+  '@prisma/cli-engine': '0.6.2'
+

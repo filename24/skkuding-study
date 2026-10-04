@@ -1,0 +1,20 @@
+meta {
+  name: 04-relationLoadStrategy join 조회
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/order/study/strategy?strategy=join&limit=5
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /order/study/strategy?strategy=join — relationLoadStrategy 'join'
+
+  **기대: 200 OK**
+
+  Prisma v7의 `relationLoadStrategy: 'join'` 전략을 사용하여
+  데이터베이스 레벨에서 JOIN(LEFT JOIN / LATERAL)으로 단일 쿼리로 데이터를 결합하여 가져옵니다.
+}

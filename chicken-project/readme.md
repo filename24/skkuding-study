@@ -1,248 +1,406 @@
-# 치킨집 관리 서버 (Day 3 NestJS 스터디)
+# 치킨집 관리 서버 (Day 4 Prisma 스터디)
 
-저번 주(`day-2-nestjs`)에 만든 치킨집 CRUD 서버에 **요청을 안전하게 처리하는 기능**을 붙였습니다.
+저번 주(`day-3-nestjs`)의 파일 기반(`chickens.json`) 서버에서 **PostgreSQL 데이터베이스와 Prisma ORM v7**로 전환하고, 실제 서비스 개발에서 반드시 마주치게 되는 데이터베이스 동시성, 관계 로딩, 트랜잭션, 마이그레이션 문제를 다룹니다.
 
-이번 주 다룬 것: **DTO + Validation · Pipe · Exception · Guard · Test**
+> 참고 자료: [Prisma ORM 7 공식 문서](https://www.prisma.io/docs/orm/v7) · [Coming from Prisma ORM 7](https://www.prisma.io/docs/orm/coming-from-prisma-orm-7)
 
-> 원문: [3. NestJS (2) — skkuding/cookbook](https://github.com/skkuding/cookbook/blob/main/content/docs/backend/3.%20NestJS%20(2).md)
+---
+
+## 목차
+1. [실행하기](#실행하기)
+2. [핵심 학습 내용 (Prisma v7)](#핵심-학습-내용-prisma-v7)
+   - [1. findUniqueOrThrow: 데이터가 없으면 null로 끝내야 할까?](#1-finduniqueorthrow-데이터가-없으면-null로-끝내야-할까)
+   - [2. 관계 데이터와 N+1 문제](#2-관계-데이터와-n1-문제)
+   - [3. relationLoadStrategy: join vs query](#3-relationloadstrategy-join-vs-query)
+   - [4. 여러 작업을 하나로: 트랜잭션 ($transaction)](#4-여러-작업을-하나로-트랜잭션-transaction)
+   - [5. 동시성 문제와 Atomic Update](#5-동시성-문제와-atomic-update)
+   - [6. 낙관적 동시성 제어 (OCC, Optimistic Concurrency Control)](#6-낙관적-동시성-제어-occ-optimistic-concurrency-control)
+   - [7. 페이지네이션: Offset vs Cursor](#7-페이지네이션-offset-vs-cursor)
+   - [8. 필요한 데이터만 가져오기: select vs omit](#8-필요한-데이터만-가져오기-select-vs-omit)
+3. [Prisma Migrate 완벽 이해하기](#prisma-migrate-완벽-이해하기)
+   - [마이그레이션 이력 관리](#마이그레이션-이력-관리)
+   - [migrate dev vs migrate deploy](#migrate-dev-vs-migrate-deploy)
+   - [Schema Drift와 Shadow Database](#schema-drift와-shadow-database)
+   - [db push vs migrate dev](#db-push-vs-migrate-dev)
+   - [무중단 스키마 변경: Expand and Contract 패턴](#무중단-스키마-변경-expand-and-contract-패턴)
+4. [Prisma v8 (Release Candidate) 비교](#prisma-v8-release-candidate-비교)
+5. [API 목록](#api-목록)
+6. [API 테스트 (Bruno)](#api-테스트-bruno)
+7. [자동화 테스트 (Unit & E2E)](#자동화-테스트-unit--e2e)
+
+---
 
 ## 실행하기
 
+### 1. PostgreSQL 데이터베이스 실행
+Docker Compose로 로컬 데이터베이스를 구동합니다.
+```bash
+docker compose up -d
+```
+
+### 2. 패키지 설치 및 마이그레이션 적용
 ```bash
 pnpm install
+
+# 마이그레이션 적용 (init 및 add_spicy_level 이력 적용)
+pnpm run prisma:deploy
+
+# 마이그레이션 상태 확인
+pnpm run prisma:status
+
+# 초기 시드 데이터 주입 (치킨 5곳, 주문 15건)
+pnpm run prisma:seed
+```
+
+### 3. 서버 실행
+```bash
 pnpm run start:dev   # http://localhost:3000
 ```
 
-테스트:
-
+### 4. 테스트 실행
 ```bash
-pnpm test         # Unit Test (chicken.service.spec.ts)
-pnpm run test:e2e # E2E Test (test/chicken.e2e-spec.ts)
-pnpm run test:cov # 커버리지 포함
+pnpm test            # Unit Test (Service 단위 테스트)
+pnpm run test:e2e    # E2E Test (실제 DB 연결 E2E 테스트)
 ```
 
-> Node 24.9 이상이 필요합니다. 스크립트가 `NODE_OPTIONS=--experimental-vm-modules`를
-> 넣어 주는 이유는, NestJS 12 패키지가 ESM(`"type": "module"`)으로 배포되어
-> Jest가 이를 `require`로 읽기 위해 experimental VM Modules가 필요하기 때문입니다.
-> `cross-env`를 쓴 이유도 Windows에서 `NODE_OPTIONS=...` 문법이 먹지 않기 때문입니다.
+---
 
-## 요청이 들어오면 무슨 일이 일어나나요?
+## 핵심 학습 내용 (Prisma v7)
+
+### 1. findUniqueOrThrow: 데이터가 없으면 null로 끝내야 할까?
+기본 `findUnique()`는 데이터가 없으면 `null`을 반환하므로, 서비스 계층마다 다음과 같은 코드가 반복됩니다:
+```ts
+const chicken = await prisma.chicken.findUnique({ where: { id: chickenId } });
+if (!chicken) {
+  throw new NotFoundException('해당 치킨집 정보가 존재하지 않습니다.');
+}
+```
+`findUniqueOrThrow()`는 데이터가 없을 때 즉시 예외(`NotFoundError`, 코드 `P2025`)를 발생시키며 반환 타입도 nullable이 아닙니다:
+```ts
+const chicken = await prisma.chicken.findUniqueOrThrow({
+  where: { id: chickenId },
+});
+```
+"이 id의 치킨집은 반드시 존재해야 한다"는 서비스의 전제조건을 간결하고 명확하게 드러냅니다. (발생한 `P2025` 에러는 `PrismaClientExceptionFilter`가 자동으로 404 HTTP 응답으로 변환합니다.)
+
+---
+
+### 2. 관계 데이터와 N+1 문제
+치킨집 주문 시스템에서는 다음과 같은 관계가 존재합니다:
+```
+Chicken (치킨)
+  └── Order (주문)
+        └── OrderItem (주문 상품)
+```
+
+#### N+1 문제란?
+주문 목록 100개를 가져온 뒤 루프를 돌며 각 주문의 주문 상품을 다시 조회하면:
+- 주문 목록 조회: **1번**
+- 각 주문별 상품 조회: **100번**
+- **총 101번의 쿼리**가 데이터베이스에 전송됩니다.
+
+```ts
+// ❌ N+1 문제 발생 코드
+const orders = await prisma.order.findMany(); // 1번
+for (const order of orders) {
+  const items = await prisma.orderItem.findMany({ where: { orderId: order.id } }); // N번
+}
+```
+
+#### 해결 방법
+Prisma의 `include` 또는 `select`를 사용하여 한 번에 연관 관계를 가져옵니다:
+```ts
+// ✅ 효율적인 관계 조회
+const orders = await prisma.order.findMany({
+  include: {
+    items: {
+      include: {
+        chicken: true,
+      },
+    },
+  },
+});
+```
+
+---
+
+### 3. relationLoadStrategy: join vs query
+Prisma v7에서는 관계 데이터를 가져올 때 데이터베이스 레벨의 전략을 지정할 수 있습니다:
 
 ```mermaid
 flowchart LR
-    Client["손님<br>Client"] --> Guard["출입 검사<br>Guard"]
-    Guard --> Pipe["주문서 검사<br>Pipe"]
-    Pipe --> Controller["카운터<br>Controller"]
-    Controller --> Service["주방장<br>Service"]
-    Service --> Controller
-    Controller --> Client
+    Query["Order 조회"] --> Strategy{"relationLoadStrategy"}
+    Strategy -->|"join"| DB["DB에서 JOIN/LATERAL로 결합"]
+    Strategy -->|"query"| Q1["Order 조회"]
+    Q1 --> Q2["OrderItem IN (...) 조회"]
+    Q2 --> App["애플리케이션 메모리에서 조합"]
+    DB --> Result["최종 결과"]
+    App --> Result
 ```
 
-저번 주에는 `손님 → 카운터 → 주방장`이었는데, 이번 주에는
-**카운터 앞에 두 명(Guard, Pipe)이 더 배치**되었습니다.
+```ts
+const orders = await prisma.order.findMany({
+  relationLoadStrategy: 'join', // 또는 'query'
+  include: {
+    items: true,
+  },
+});
+```
+- **`join`**: PostgreSQL의 `LEFT JOIN` / `LATERAL`을 사용해 단일 쿼리로 결합합니다. 네트워크 왕복이 줄어들지만 대량 1:N 조인 시 중복 데이터 전송량이 늘어날 수 있습니다.
+- **`query`**: 부모 쿼리와 자식 쿼리(`WHERE IN (...)`)를 나누어 보낸 후 Node.js 메모리에서 조합합니다.
+- 데이터의 양과 인덱스 상황에 따라 실행 계획(EXPLAIN ANALYZE)을 보고 최적의 전략을 선택합니다.
 
-| 단계 | 담당 | 구현 파일 | 막는 것 |
-| --- | --- | --- | --- |
-| 출입 검사 | `ApiKeyGuard` | `src/chicken/guards/api-key.guard.ts` | 직원이 아닌 사람의 변경 요청 |
-| 주문서 검사 | `ValidationPipe` + `ParseIntPipe` | `src/app.setup.ts`, `chicken.controller.ts` | 양식에 안 맞는 Body, 숫자가 아닌 id |
-| 재고 확인 | Built-in Exception | `src/chicken/chicken.service.ts` | 없는 가게(404), 중복 상호(409) |
+---
 
-각 단계가 **다른 문제**를 검사하기 때문에 서로 다른 곳에서 처리합니다.
+### 4. 여러 작업을 하나로: 트랜잭션 ($transaction)
+치킨 주문이 발생하면 다음 작업들이 동시에 일어나야 합니다:
+1. 치킨 재고 확인
+2. 치킨 재고 차감
+3. 주문(Order) 레코드 생성
+4. 주문 상세 항목(OrderItem) 레코드 생성
 
-- Pipe: *요청 데이터 자체*가 유효한가? (형식, 타입, 숫자 변환)
-- Service: *실제 데이터*가 존재하는가? (장부에 있는가)
-
-## API
-
-변경 API(POST/PATCH/DELETE)는 반드시 `x-api-key: chicken-admin-key` 헤더가 필요합니다.
-
-| 메서드 | 경로 | 설명 | Guard | 응답 |
-| --- | --- | --- | --- | --- |
-| GET | `/chicken` | 전체 치킨집 목록 | - | 200 |
-| GET | `/chicken/:id` | 치킨집 단건 조회 | - | 200 / 400 / 404 |
-| POST | `/chicken` | 치킨집 등록 | ✅ | 201 / 400 / 403 / 409 |
-| PATCH | `/chicken/:id` | 치킨집 정보 일부 수정 | ✅ | 200 / 400 / 403 / 404 |
-| DELETE | `/chicken/:id` | 치킨집 삭제 | ✅ | 200 / 400 / 403 / 404 |
-
-`id`는 손님이 정하지 않습니다. 등록하면 서버가 자동으로 붙여 줍니다.
-
-### 상태코드 정리
-
-| 상태코드 | 언제 | 누가 |
-| --- | --- | --- |
-| 400 | Body가 DTO 규칙에 안 맞거나, id가 숫자가 아님 | ValidationPipe / ParseIntPipe |
-| 401 | (아직 안 씀) 인증 실패 — `UnauthorizedException` | - |
-| 403 | API Key가 없거나 틀림 | ApiKeyGuard |
-| 404 | 없는 id로 조회·수정·삭제 | ChickenService |
-| 409 | 같은 상호가 이미 등록됨 | ChickenService |
-
-## 이번 주 새로 배운 것
-
-### 1. DTO에 검사 규칙을 붙이다
-
-`src/chicken/dto/create-chicken.dto.ts`
+중간에 재고가 부족하거나 에러가 났는데 앞선 작업이 커밋된다면 데이터 정합성이 깨집니다.
 
 ```ts
-export class CreateChickenDto {
-  @IsString()
-  @IsNotEmpty()
-  name: string;
+await prisma.$transaction(async (tx) => {
+  // 1. 재고 확인 및 원자적 차감
+  const chicken = await tx.chicken.findUniqueOrThrow({ where: { id: chickenId } });
+  if (chicken.stock < quantity) {
+    throw new BadRequestException('재고가 부족합니다.');
+  }
 
-  @IsEnum(ChickenType) // 메뉴판에 없는 메뉴("SPICY")는 여기서 막힘
-  type: ChickenType;
+  await tx.chicken.update({
+    where: { id: chickenId },
+    data: { stock: { decrement: quantity } },
+  });
 
-  @IsInt()
-  @Min(0)
-  price: number;
+  // 2. 주문 생성
+  const order = await tx.order.create({
+    data: {
+      customerId,
+      totalPrice: chicken.price * quantity,
+      items: {
+        create: [{ chickenId, quantity, price: chicken.price }],
+      },
+    },
+  });
+
+  return order;
+});
+```
+- 블록 안에서 에러가 던져지면 모든 변경 사항이 자동으로 **ROLLBACK**됩니다.
+- 트랜잭션 내부에는 외부 API 호출 등 지연을 유발하는 코드를 넣지 않습니다 (DB 커넥션 점유 최소화).
+
+---
+
+### 5. 동시성 문제와 Atomic Update
+두 손님이 동시에 남은 재고 1마리의 치킨을 주문하면, 둘 다 "재고 1마리 있음"으로 판단하여 둘 다 성공해 버리는 **Lost Update (Race Condition)**가 발생할 수 있습니다.
+
+```ts
+// ✅ DB 레벨 원자적 차감
+await prisma.chicken.update({
+  where: { id: chickenId },
+  data: {
+    stock: {
+      decrement: quantity,
+    },
+  },
+});
+```
+애플리케이션 메모리에서 읽고 계산한 뒤 덮어쓰는 대신, PostgreSQL 자체의 `UPDATE "Chicken" SET stock = stock - quantity` 원자적 연산을 활용합니다.
+
+---
+
+### 6. 낙관적 동시성 제어 (OCC, Optimistic Concurrency Control)
+충돌이 드물게 발생하지만 반드시 막아야 하는 정보 수정에는 `version` 컬럼을 둡니다:
+
+```prisma
+model Chicken {
+  id      Int @id @default(autoincrement())
+  version Int @default(0)
   // ...
 }
 ```
 
-DTO만 만들어서는 아무도 검사하지 않습니다. **규칙을 적어 놓고**
-실제 요청에 적용할 무언가가 필요합니다.
-
-### 2. ValidationPipe로 규칙을 실제 요청에 적용
-
-`src/app.setup.ts`
-
 ```ts
-app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-```
+// 수정 시 내가 읽었던 version 번호와 일치하는 경우에만 업데이트
+const result = await prisma.chicken.updateMany({
+  where: {
+    id: chickenId,
+    version: expectedVersion,
+  },
+  data: {
+    price: newPrice,
+    version: { increment: 1 },
+  },
+});
 
-- `whitelist: true` → DTO에 없는 필드는 조용히 잘라냅니다.
-  손님이 `id`, `isAdmin`을 끼워 넣어도 주방장에게 전달되지 않습니다.
-- `transform: true` → 요청 값을 DTO에 선언된 타입으로 변환합니다.
-
-`main.ts`와 e2e 테스트가 `setupApp()`을 함께 쓰는 이유는,
-테스트가 진짜 서버와 **완전히 같은 설정**으로 돌아야 하기 때문입니다.
-
-### 3. ParseIntPipe로 숫자 변환
-
-```ts
-@Get(':id')
-findOne(@Param('id', ParseIntPipe) id: number) {
-  return this.chickenService.findById(id);
+if (result.count === 0) {
+  throw new ConflictException('다른 사용자에 의해 데이터가 변경되었습니다. 최신 데이터를 확인해주세요.');
 }
 ```
 
-URL로 들어오는 값은 항상 문자열입니다. `ParseIntPipe`가 숫자로 바꿔 주고,
-`/chicken/chicken`처럼 바꿀 수 없으면 컨트롤러에 도달하기 전에 400으로 막습니다.
+---
 
-### 4. Built-in Exception으로 문제를 알리기
+### 7. 페이지네이션: Offset vs Cursor
 
-```ts
-findById(id: number): Chicken {
-  const chicken = this.readData().find((item) => item.id === id);
-  if (!chicken) {
-    throw new NotFoundException('해당 치킨집 정보가 존재하지 않습니다.');
-  }
-  return chicken;
-}
+#### Offset Pagination
+- 쿼리: `skip: 100000, take: 20`
+- 문제점: 앞의 10만 개 레코드를 DB가 실제로 읽고 버려야 하므로 뒤로 갈수록 쿼리가 급격히 느려집니다.
+
+#### Cursor Pagination
+- 쿼리: `take: 20, skip: 1, cursor: { id: lastSeenId }, orderBy: { id: 'asc' }`
+- 장점: 인덱스를 활용해 "이 ID 다음부터 20개"를 즉시 찾으므로 아무리 페이지가 깊어져도 응답 속도가 일정합니다.
+
+---
+
+### 8. 필요한 데이터만 가져오기: select vs omit
+- **`select`**: "이 필드들만 가져와줘"
+  ```ts
+  const chickens = await prisma.chicken.findMany({
+    select: { id: true, name: true, price: true },
+  });
+  ```
+- **`omit`**: "기본적으로 다 가져오되, 이 필드만 빼줘"
+  ```ts
+  const chickens = await prisma.chicken.findMany({
+    omit: { createdAt: true, updatedAt: true },
+  });
+  ```
+
+---
+
+## Prisma Migrate 완벽 이해하기
+
+### 마이그레이션 이력 관리
+Prisma Migrate는 스키마의 변경 역사를 코드(`prisma/migrations/`)와 데이터베이스(`_prisma_migrations` 테이블) 양쪽에 기록합니다.
+
+```mermaid
+flowchart LR
+    Schema["Prisma Schema 변경"] --> Migration["Migration SQL 생성"]
+    Migration --> Git["Git에 커밋"]
+    Git --> Deploy["배포 환경 적용"]
+    Deploy --> DB["_prisma_migrations 테이블에 기록"]
 ```
 
-| Exception | 상태코드 | 언제 쓰나 |
+이 프로젝트는 2단계 마이그레이션으로 구성되어 있습니다:
+1. `20261004120000_init`: `Chicken`, `Order`, `OrderItem` 초기 생성
+2. `20261004130000_add_spicy_level`: `Chicken` 테이블에 `spicyLevel` 컬럼 추가
+
+### migrate dev vs migrate deploy
+- **개발 환경 (`pnpm run prisma:migrate` / `prisma migrate dev`)**:
+  - `schema.prisma` 변경점을 감지하여 새 SQL 마이그레이션 파일을 생성하고 개발 DB에 적용합니다.
+  - Shadow Database를 활용해 스키마 유효성을 검증합니다.
+- **운영/배포 환경 (`pnpm run prisma:deploy` / `prisma migrate deploy`)**:
+  - 새 마이그레이션 파일을 생성하지 않고, **이미 Git에 커밋된 마이그레이션 파일들 중 DB에 아직 적용되지 않은 것만 순서대로 실행**합니다.
+
+### Schema Drift와 Shadow Database
+누군가 DB 콘솔에 직접 접속해 테이블이나 컬럼을 수동으로 변경하면, Git의 마이그레이션 이력과 실제 DB 상태가 달라집니다. 이를 **Schema Drift**라고 부릅니다.
+`prisma migrate dev`는 임시 DB(Shadow DB)를 생성하여 처음부터 마이그레이션을 돌려본 뒤 개발 DB와 상태를 비교함으로써 Schema Drift를 감지합니다.
+
+### db push vs migrate dev
+- `prisma db push`: 마이그레이션 히스토리 파일을 남기지 않고 스키마를 DB에 즉시 강제 반영합니다. (초기 프로토타이핑용)
+- `prisma migrate dev`: 변경 이력을 SQL 파일로 남겨 팀원 및 운영 환경과 동일한 변경 과정을 공유합니다. (프로덕션 필수)
+
+### 무중단 스키마 변경: Expand and Contract 패턴
+운영 중인 DB에 이미 데이터가 수십만 건 있을 때, 필수 컬럼을 추가하거나 컬럼명을 변경하면 구버전 서버와의 호환성이 깨질 수 있습니다.
+
+```mermaid
+flowchart LR
+    A["1. 새 구조 추가<br/>(Expand)"] --> B["2. 애플리케이션<br/>양방향 쓰기"]
+    B --> C["3. 기존 데이터<br/>Backfill 마이그레이션"]
+    C --> D["4. 애플리케이션<br/>새 구조 읽기로 전환"]
+    D --> E["5. 구버전 컬럼 제거<br/>(Contract)"]
+```
+
+---
+
+## Prisma v7 & v8 동시 지원 및 비교
+
+이 프로젝트는 [공식 Prisma 7 to 8 PostgreSQL 점진적 업그레이드 가이드](https://github.com/prisma/docs/blob/main/apps/docs/content/docs/guides/upgrade-prisma-orm/postgresql.mdx)에 따라 구성되어 있습니다.
+Prisma v7과 v8을 분리된 프로젝트가 아닌 **동일한 서비스와 API 엔드포인트에서 나란히 구동**하여, 개발자가 실시간으로 문법과 동작을 비교할 수 있습니다.
+
+### 듀얼 아키텍처 구성 방식
+1. **Prisma 7 (`@prisma/prisma7` & `@prisma/client`)**:
+   - `prisma7.config.ts`: Prisma 7 설정 파일 (`prisma/schema.prisma` 참조)
+   - CLI 명령어: `pnpm exec prisma7 generate`, `pnpm exec prisma7 migrate deploy`
+2. **Prisma 8 (`prisma@8.0.0-rc.14` & `@prisma/orm-postgres`)**:
+   - `prisma.config.ts`: Prisma 8 설정 파일 (`prisma/contract.prisma` 참조)
+   - CLI 명령어: `pnpm exec prisma contract emit` -> `generated/prisma8/contract.json` & `contract.d.ts` 생성
+   - 런타임: `postgres<Contract>({ url, contractJson })` (`@prisma/orm-postgres/runtime`)을 `PrismaV8Service`에서 인스턴스화하여 실제 PostgreSQL 데이터베이스 쿼리 수행
+
+| 주제 | Prisma v7 (현재 프로젝트) | Prisma v8 (동시 제공 `/v8`) |
 | --- | --- | --- |
-| `BadRequestException` | 400 | 요청 데이터가 잘못됨 |
-| `UnauthorizedException` | 401 | 신원을 확인하지 못함 |
-| `ForbiddenException` | 403 | 신원은 알지만 권한이 없음 |
-| `NotFoundException` | 404 | 찾는 데이터가 없음 |
-| `ConflictException` | 409 | 현재 상태와 충돌함 |
+| **스키마/계약서** | `prisma/schema.prisma` | `prisma/contract.prisma` |
+| **datasource/generator** | 스키마 내부에 선언 | `prisma.config.ts`로 완전 분리 |
+| **클라이언트 생성** | `pnpm exec prisma7 generate` | `pnpm exec prisma contract emit` |
+| **전체 조회** | `prisma.chicken.findMany()` | `db.orm.public.Chicken.all()` |
+| **단건 조회 예외** | `findUniqueOrThrow()` | `.where(...).all().firstOrThrow()` |
+| **단건 생성** | `create({ data: { ... } })` | `create({ ... })` (data 래퍼 제거) |
+| **대량 삽입** | `createMany({ skipDuplicates: true })` | `createAll(..., { onConflict: 'skip' })` |
+| **삽입 개수** | `createMany()`의 `{ count }` | `createAndCount()` |
+| **페이지네이션** | `findMany({ skip, take })` | `offset(skip).limit(take).all()` |
+| **관계 로딩** | `include: { items: { include: { chicken: true } } }` | `.include('items', (i) => i.include('chicken', (c) => c))` |
+| **트랜잭션** | `prisma.$transaction(async (tx) => ...)` | `db.transaction(async (tx) => ...)` |
+| **Raw SQL** | `$queryRaw` / `$executeRaw` | `db.sql.public.<table...>` (SQL builder) |
+| **PostgreSQL Enum** | `enum ChickenType` (DB enum 타입 생성) | `native_enum` + `pg.enum()` (일반 enum은 text 저장) |
+| **마이그레이션** | `migrate dev` / `migrate deploy` | `contract emit` -> `migration plan` -> `db verify` |
 
-### 5. Guard로 접근 제어
+---
 
-`src/chicken/guards/api-key.guard.ts`
+## API 목록
 
-```ts
-canActivate(context: ExecutionContext): boolean {
-  const request = context.switchToHttp().getRequest();
-  return request.headers['x-api-key'] === API_KEY;
-}
-```
+변경 API(POST/PATCH/DELETE)는 `x-api-key: chicken-admin-key` 헤더가 필요합니다.
 
-`true`면 통과, `false`면 NestJS가 거절합니다.
+### 치킨 API (`/chicken`) - v7 & v8 병행
+| 메서드 | 경로 | 설명 | Guard | 실습 비교 |
+| --- | --- | --- | --- | --- |
+| GET | `/chicken` | 치킨 목록 조회 (v7) | - | `prisma.chicken.findMany()` (offset/cursor, select/omit) |
+| GET | `/chicken/v8` | 치킨 목록 조회 (v8) | - | `db.orm.public.Chicken.offset().limit().all()` |
+| GET | `/chicken/:id` | 치킨 단건 조회 (v7) | - | `findUniqueOrThrow()` |
+| GET | `/chicken/:id/v8` | 치킨 단건 조회 (v8) | - | `where({ id }).all().firstOrThrow()` |
+| POST | `/chicken` | 신규 치킨 등록 (v7) | ✅ | `create({ data: { ... } })` |
+| POST | `/chicken/v8` | 신규 치킨 등록 (v8) | ✅ | `create({ ... })` (data 래퍼 없이 직접 전달) |
+| POST | `/chicken/batch` | 치킨 대량 등록 (v7) | ✅ | `createMany({ skipDuplicates: true })` |
+| POST | `/chicken/batch/v8` | 치킨 대량 등록 (v8) | ✅ | `createAndCount(..., { onConflict: 'skip' })` |
+| PATCH | `/chicken/:id` | 치킨 정보 수정 | ✅ | `update()` |
+| PATCH | `/chicken/:id/stock` | 재고 원자적 수정 | ✅ | Atomic decrement (`stock: { decrement }`) |
+| PATCH | `/chicken/:id/occ` | 낙관적 락 정보 수정 | ✅ | OCC 버전 증가 및 409 Conflict |
+| DELETE | `/chicken/:id` | 치킨 삭제 | ✅ | `delete()` |
 
-Guard는 "**허용할지 거부할지**"만 결정합니다.
-"이 사람이 누구인가"(Authentication)와 "무엇을 할 수 있는가"(Authorization)는
-실제 프로젝트에서 로그인·권한 시스템으로 확장하는 주제입니다.
+### 주문 API (`/order`) - v7 & v8 병행
+| 메서드 | 경로 | 설명 | Guard | 실습 비교 |
+| --- | --- | --- | --- | --- |
+| POST | `/order` | 치킨 주문 생성 | ✅ | `$transaction`, 재고 차감 및 롤백 |
+| GET | `/order` | 주문 목록 조회 (v7) | - | Cursor / Offset 페이지네이션 |
+| GET | `/order/v8` | 주문 목록 조회 (v8) | - | `db.orm.public.Order.offset().limit().all()` |
+| GET | `/order/:id` | 주문 상세 조회 (v7) | - | 중첩 `include: { items: { chicken } }` |
+| GET | `/order/:id/v8` | 주문 상세 조회 (v8) | - | `db.orm.public.Order.where({ id }).all().firstOrThrow()` |
+| GET | `/order/study/n-plus-one` | N+1 문제 시뮬레이션 | - | 1+N 쿼리 발생 현상 확인 |
+| GET | `/order/study/strategy` | 관계 로딩 전략 비교 | - | `relationLoadStrategy` ('join' vs 'query') |
 
-> ⚠️ `false`를 반환하면 NestJS는 403을 보냅니다. 그런데 API Key가 없다는 것은
-> 본질적으로 "신원을 확인하지 못했다"이므로 401이 더 정확합니다.
-> 스터디는 본문 코드를 그대로 따랐지만, 실제 프로젝트에서는
-> `throw new UnauthorizedException()`으로 바꾸는 편이 좋습니다.
-
-### 6. 테스트
-
-| 종류 | 무��을 테스트 | 이 프로젝트의 파일 |
-| --- | --- | --- |
-| Unit Test | 주방장 한 명을 독립적으로 | `src/chicken/chicken.service.spec.ts` |
-| Integration Test | 카운터와 주방이 함께 | (지금은 e2e가 함께 검증) |
-| E2E Test | 손님 요청부터 응답까지 전체 | `test/chicken.e2e-spec.ts` |
-
-```ts
-const module = await Test.createTestingModule({
-  providers: [ChickenService],
-}).compile();
-
-service = module.get<ChickenService>(ChickenService);
-```
-
-Unit Test는 HTTP 없이 주방장만 띄웁니다. e2e는 `supertest`로 진짜 요청을 보내고
-Guard(403)·Pipe(400)·Exception(404/409)이 각각 제 역할을 하는지 확인합니다.
-
-> 주방장은 `src/data/chickens.json`을 직접 읽고 씁니다.
-> 테스트가 원본 장부를 덮어쓰지 않도록 **테스트마다 임시 파일**로 경로를 바꿉니다.
+---
 
 ## API 테스트 (Bruno)
 
-`bruno/chicken-api/`에 요청 모음이 있습니다. 컬렉션 루트(`bruno.json`)가 있는
-**`bruno/chicken-api/` 디렉터리 자체를 열어야** Bruno가 컬렉션으로 인식합니다.
-
-1. [Bruno](https://www.usebruno.com/) 설치 (CLI는 `npm i -g @usebruno/cli`)
-2. `pnpm run start:dev`로 서버를 켭니다
-3. Bruno 앱에서는 `bruno/chicken-api` 폴더를 열거나, CLI로는 컬렉션 폴더에서 실행합니다
+`chicken-project/bruno/chicken-api/` 컬렉션을 통해 전체 API를 GUI 또는 CLI로 테스트할 수 있습니다.
 
 ```bash
-cd bruno/chicken-api
-bru run                       # 컬렉션 전체 실행
-bru run -r "05-에러 케이스"   # 특정 폴더만 실행
+# 컬렉션 폴더로 이동하여 전체 실행
+bru run chicken-project/bruno/chicken-api
+
+# 주문 및 트랜잭션 테스트 폴더 실행
+bru run -r "06-주문 및 트랜잭션" chicken-project/bruno/chicken-api
 ```
 
-환경은 `environments/local.bru`이며 `bruno.json`의
-`presets.defaultEnvironment`로 `local`이 지정돼 있어 별도 선택이 필요 없습니다.
-값은 `baseUrl`, `apiKey` 두 가지입니다.
+---
 
-```text
-01-조회          200, 200
-02-등록          201
-03-수정          200
-04-삭제          200
-05-에러 케이스   400, 201(알 수 없는 필드는 잘려 나감), 400, 404, 403, 403, 409
+## 자동화 테스트 (Unit & E2E)
+
+```bash
+# 1. 단위 테스트 (Service 레이어 21개 케이스 100% 통과)
+pnpm test
+
+# 2. E2E 테스트 (실제 PostgreSQL 연동 27개 케이스 100% 통과)
+pnpm run test:e2e
 ```
-
-`bru run` 결과의 상태코드가 위와 다르면 서버가 안 떠 있는 것입니다.
-
-4. 요청을 하나씩 실행하면서 **기대 상태코드**와 compare해 봅니다
-
-`05-에러 케이스` 폴더가 이번 주의 핵심입니다.
-**일부러 잘못된 요청을 보내서** 각 직원이 어디서 막는지 확인해 보세요.
-
-수정 요청이 전부 403으로 막히는다면 헤더의 `x-api-key` 값을
-`{{apiKey}}`로 지정했는지 확인하세요.
-
-> `No Bruno collections found. Couldn't find a bruno.json or opencollection.yml`
-> 이 나오면 컬렉션 폴더(`bruno/chicken-api`)이 아니라 그 위쪽에서 실행한 것입니다.
-> `bruno.json`이 있는 폴더로 이동하거나 `bru run bruno/chicken-api`처럼 경로를 넘기세요.
-
-## 더 해보면 좋을 것
-
-- [ ] `forbidNonWhitelisted: true`로 바꿔 보고, 잘라내기와 거절의 차이 비교
-- [ ] API Key를 환경변수(`process.env.API_KEY`)로 옮기기
-- [ ] `UnauthorizedException`으로 바꿔 보고 401 응답 확인
-- [ ] `LoggerMiddleware`(모든 요청 로그) 구현해 보기
-- [ ] `TransformInterceptor`(응답 시간을 로그로 남기기) 구현해 보기
-- [ ] `HttpExceptionFilter`로 404 응답 형식 통일해 보기
-- [ ] `@CurrentUser()` 커스텀 데코레이터 만들기
-
-이 중 Middleware, Interceptor, Exception Filter, Custom Decorator는
-**이번 실습에서 다루지 않았지만** 요청 흐름에서 어떤 자리를 차지하는지
-공식 문서로 확인해 보세요.

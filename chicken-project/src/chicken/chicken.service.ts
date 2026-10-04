@@ -1,165 +1,347 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { CreateChickenDto, UpdateChickenDto, ChickenType } from './dto/create-chicken.dto';
-import * as fs from 'fs';
-import * as path from 'path';
+import { Chicken, Prisma } from '@prisma/client';
+import { PrismaV8Service } from '../prisma/prisma-v8.service';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  BatchCreateChickenDto,
+  CreateChickenDto,
+  OccUpdateChickenDto,
+  QueryChickenDto,
+  UpdateChickenDto,
+} from './dto/create-chicken.dto';
+
+export { Chicken };
 
 /**
- * 치킨집 한 곳의 정보를 담는 데이터 구조.
+ * 주방장(ChickenService) - Prisma ORM v7 & v8 동시 지원.
  *
- * DB를 배우기 전까지는 `chickens.json` 장부 파일에 이 형태로 저장합니다.
- */
-export interface Chicken {
-  /** 서버가 자동으로 부여하는 치킨집 번호. API에서 가게를 가리킬 때 씁니다. */
-  id: number;
-  name: string;
-  type: ChickenType;
-  price: number;
-  address: string;
-  phone: string;
-}
-
-/**
- * 주방장(ChickenService).
+ * 동일한 데이터베이스를 대상으로 v7과 v8의 API 문법을 나란히 구현하여
+ * 실제로 호출하고 동작과 응답을 비교할 수 있도록 설계되었습니다.
  *
- * 카운터(Controller)가 넘겨준 주문을 실제로 처리하고,
- * 재고 장부(`src/data/chickens.json`)를 읽고 쓰는 역할을 맡습니다.
- * "장부에 없는 가게입니다"처럼 데이터에 대한 오류는 여기서 예외로 알립니다.
- *
- * `@Injectable()` 데코레이터를 붙이면 NestJS가 이 클래스를 '주방장'으로 인식하여
- * 필요한 곳에 주입해 줍니다.
+ * - findAll() (v7 findMany) vs findAllV8() (v8 db.orm.public.Chicken.all)
+ * - findById() (v7 findUniqueOrThrow) vs findByIdV8() (v8 where().all().firstOrThrow)
+ * - create() (v7 create with data wrapper) vs createV8() (v8 create without data wrapper)
+ * - createBatch() (v7 createMany) vs createBatchV8() (v8 createAndCount onConflict: 'skip')
  */
 @Injectable()
 export class ChickenService {
-  /** 재고 장부 파일 위치 */
-  private filePath = path.resolve(process.cwd(), 'src/data/chickens.json');
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly v8: PrismaV8Service,
+  ) {}
+
+  // ==========================================
+  // [조회: v7 findMany vs v8 all()]
+  // ==========================================
 
   /**
-   * 장부(파일)에서 현재 데이터를 읽어옵니다.
-   *
-   * @returns 장부에 등록된 치킨집 목록. 장부 파일이 없으면 빈 배열
+   * [Prisma v7] 전체 치킨집 목록 조회
    */
-  private readData(): Chicken[] {
-    if (!fs.existsSync(this.filePath)) {
-      return [];
+  async findAll(query?: QueryChickenDto) {
+    const limit = query?.limit ?? 10;
+    const page = query?.page ?? 1;
+    const cursor = query?.cursor;
+    const projection = query?.projection ?? 'all';
+
+    // 1. 프로젝션 설정 (select vs omit)
+    let selectClause: Prisma.ChickenSelect | undefined;
+    let omitClause: Prisma.ChickenOmit | undefined;
+
+    if (projection === 'select') {
+      selectClause = {
+        id: true,
+        name: true,
+        price: true,
+        spicyLevel: true,
+      };
+    } else if (projection === 'omit') {
+      omitClause = {
+        createdAt: true,
+        updatedAt: true,
+      };
     }
-    const raw = fs.readFileSync(this.filePath, 'utf-8');
-    const parsed = JSON.parse(raw);
-    return parsed.chickens || [];
+
+    // 2. 페이지네이션 방식 결정 (Cursor vs Offset)
+    if (cursor) {
+      const chickens = await this.prisma.chicken.findMany({
+        take: limit,
+        skip: 1,
+        cursor: { id: cursor },
+        orderBy: { id: 'asc' },
+        ...(selectClause ? { select: selectClause } : {}),
+        ...(omitClause ? { omit: omitClause } : {}),
+      });
+
+      const nextCursor = chickens.length > 0 ? (chickens[chickens.length - 1] as Chicken).id : null;
+      return { chickens, nextCursor, paginationType: 'cursor', version: 'Prisma v7' };
+    }
+
+    const skip = (page - 1) * limit;
+    const [chickens, totalCount] = await Promise.all([
+      this.prisma.chicken.findMany({
+        skip,
+        take: limit,
+        orderBy: { id: 'asc' },
+        ...(selectClause ? { select: selectClause } : {}),
+        ...(omitClause ? { omit: omitClause } : {}),
+      }),
+      this.prisma.chicken.count(),
+    ]);
+
+    return {
+      chickens,
+      totalCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalCount / limit),
+      paginationType: 'offset',
+      version: 'Prisma v7',
+    };
   }
 
   /**
-   * 변경된 내용을 장부(파일)에 저장합니다.
+   * [Prisma v8] 전체 치킨집 목록 조회.
    *
-   * @param chickens - 저장할 치킨집 전체 목록
+   * v7의 prisma.chicken.findMany() 대신
+   * v8에서는 db.orm.public.Chicken.offset().limit().all() 형태로 체이닝합니다.
    */
-  private writeData(chickens: Chicken[]): void {
-    fs.writeFileSync(this.filePath, JSON.stringify({ chickens }, null, 2), 'utf-8');
+  async findAllV8(page: number = 1, limit: number = 10) {
+    const skip = (page - 1) * limit;
+    const chickens = await this.v8.orm.public.Chicken.offset(skip).limit(limit).all();
+
+    return {
+      version: 'Prisma ORM v8 (RC)',
+      methodUsed: 'db.orm.public.Chicken.offset().limit().all()',
+      page,
+      limit,
+      chickens,
+    };
   }
 
-  /**
-   * 전체 치킨집 목록을 조회합니다.
-   *
-   * @returns 치킨집 목록을 담은 객체
-   */
-  findAll(): { chickens: Chicken[] } {
-    return { chickens: this.readData() };
-  }
+  // ==========================================
+  // [단건 조회: v7 findUniqueOrThrow vs v8 firstOrThrow]
+  // ==========================================
 
   /**
-   * id로 특정 치킨집을 찾습니다.
-   *
-   * Pipe(`ParseIntPipe`)가 숫자 변환을, 여기서는 "장부에 있는 데이터인지"를 책임집니다.
-   * 둘은 검사하는 문제가 다르기 때문에 따로 처리합니다.
-   *
-   * @param id - 찾으려는 치킨집 번호
-   * @returns 해당 치킨집 정보
-   * @throws NotFoundException 장부에 없는 id를 요청했을 때 (HTTP 404)
+   * [Prisma v7] id로 치킨집 단건 조회 (findUniqueOrThrow).
    */
-  findById(id: number): Chicken {
-    const chicken = this.readData().find((item) => item.id === id);
-    if (!chicken) {
+  async findById(id: number): Promise<Chicken> {
+    try {
+      return await this.prisma.chicken.findUniqueOrThrow({
+        where: { id },
+      });
+    } catch {
       throw new NotFoundException('해당 치킨집 정보가 존재하지 않습니다.');
     }
-    return chicken;
   }
 
   /**
-   * 상호명으로 특정 치킨집을 찾습니다.
+   * [Prisma v8] id로 치킨집 단건 조회 (where(...).all().firstOrThrow()).
    *
-   * 신규 등록 시 상호가 겹치는지 확인할 때 씁니다.
-   *
-   * @param name - 찾으려는 치킨집 상호명
-   * @returns 찾은 치킨집 정보, 없으면 `undefined`
+   * v7의 별도 메서드 findUniqueOrThrow() 대신,
+   * v8에서는 where() 필터링 후 all().firstOrThrow() 파이프라인으로 일관되게 조회합니다.
    */
-  findByName(name: string): Chicken | undefined {
-    return this.readData().find((item) => item.name === name);
+  async findByIdV8(id: number) {
+    try {
+      const chicken = await this.v8.orm.public.Chicken.where({ id }).all().firstOrThrow();
+
+      return {
+        version: 'Prisma ORM v8 (RC)',
+        methodUsed: 'db.orm.public.Chicken.where({ id }).all().firstOrThrow()',
+        chicken,
+      };
+    } catch {
+      throw new NotFoundException('해당 치킨집 정보가 존재하지 않습니다.');
+    }
   }
 
   /**
-   * 신규 치킨집을 등록합니다.
-   *
-   * @param dto - ValidationPipe 검사를 통과한 등록 주문서
-   * @returns 서버가 id까지 채워서 돌려주는 새 치킨집 정보
-   * @throws ConflictException 같은 상호의 치킨집이 이미 있을 때 (HTTP 409)
+   * 상호명으로 특정 치킨집 조회
    */
-  create(dto: CreateChickenDto): Chicken {
-    const chickens = this.readData();
-    if (chickens.some((item) => item.name === dto.name)) {
+  async findByName(name: string): Promise<Chicken | null> {
+    return this.prisma.chicken.findUnique({
+      where: { name },
+    });
+  }
+
+  // ==========================================
+  // [등록: v7 data 래퍼 vs v8 직관적 인자]
+  // ==========================================
+
+  /**
+   * [Prisma v7] 신규 치킨집 등록.
+   */
+  async create(dto: CreateChickenDto): Promise<Chicken> {
+    const existing = await this.findByName(dto.name);
+    if (existing) {
       throw new ConflictException('이미 해당 치킨집 정보가 존재합니다.');
     }
 
-    const chicken: Chicken = { id: this.nextId(chickens), ...dto };
-    chickens.push(chicken);
-    this.writeData(chickens);
-    return chicken;
+    return this.prisma.chicken.create({
+      data: {
+        name: dto.name,
+        type: dto.type,
+        price: dto.price,
+        address: dto.address,
+        phone: dto.phone,
+        stock: dto.stock ?? 10,
+        spicyLevel: dto.spicyLevel ?? 0,
+      },
+    });
   }
 
   /**
-   * 치킨집 정보를 일부만 수정합니다.
+   * [Prisma v8] 신규 치킨집 등록.
    *
-   * @param id - 수정할 치킨집 번호
-   * @param dto - 바꿀 값만 담은 수정 주문서
-   * @returns 수정된 치킨집 정보
-   * @throws NotFoundException 장부에 없는 id를 요청했을 때 (HTTP 404)
+   * v7과 달리 { data: { ... } } 래퍼 프로퍼티가 제거되고,
+   * 생성할 객체를 직접 인자로 넘깁니다: db.orm.public.Chicken.create(...)
    */
-  update(id: number, dto: UpdateChickenDto): Chicken {
-    const chickens = this.readData();
-    const index = chickens.findIndex((item) => item.id === id);
-    if (index === -1) {
-      throw new NotFoundException('해당 치킨집 정보가 존재하지 않습니다.');
+  async createV8(dto: CreateChickenDto) {
+    const existing = await this.findByName(dto.name);
+    if (existing) {
+      throw new ConflictException('이미 해당 치킨집 정보가 존재합니다.');
     }
 
-    chickens[index] = { ...chickens[index], ...dto };
-    this.writeData(chickens);
-    return chickens[index];
+    const chicken = await this.v8.orm.public.Chicken.create({
+      name: dto.name,
+      type: dto.type,
+      price: dto.price,
+      address: dto.address,
+      phone: dto.phone,
+      stock: dto.stock ?? 10,
+      spicyLevel: dto.spicyLevel ?? 0,
+      updatedAt: new Date().toISOString().replace('T', ' ').replace('Z', ''),
+    });
+
+    return {
+      version: 'Prisma ORM v8 (RC)',
+      methodUsed: 'db.orm.public.Chicken.create(objectWithoutDataWrapper)',
+      chicken,
+    };
+  }
+
+  // ==========================================
+  // [대량 등록: v7 createMany vs v8 createAll / createAndCount]
+  // ==========================================
+
+  /**
+   * [Prisma v7] 대량 등록 (createMany + skipDuplicates: true)
+   */
+  async createBatch(dto: BatchCreateChickenDto): Promise<{ count: number; version: string }> {
+    const data = dto.chickens.map((item) => ({
+      name: item.name,
+      type: item.type,
+      price: item.price,
+      address: item.address,
+      phone: item.phone,
+      stock: item.stock ?? 10,
+      spicyLevel: item.spicyLevel ?? 0,
+    }));
+
+    const result = await this.prisma.chicken.createMany({
+      data,
+      skipDuplicates: true,
+    });
+
+    return {
+      version: 'Prisma v7',
+      count: result.count,
+    };
   }
 
   /**
-   * 치킨집 정보를 삭제합니다.
+   * [Prisma v8] 대량 등록 (createAll & createAndCount with onConflict: 'skip')
    *
-   * @param id - 삭제할 치킨집 번호
-   * @returns 삭제된 치킨집 정보
-   * @throws NotFoundException 장부에 없는 id를 요청했을 때 (HTTP 404)
+   * skipDuplicates: true는 v8의 onConflict: 'skip'으로 직관화되었으며,
+   * 삽입된 개수는 createAndCount()로 즉시 반환받습니다.
    */
-  delete(id: number): Chicken {
-    const chickens = this.readData();
-    const index = chickens.findIndex((item) => item.id === id);
-    if (index === -1) {
+  async createBatchV8(dto: BatchCreateChickenDto) {
+    const nowStr = new Date().toISOString().replace('T', ' ').replace('Z', '');
+    const data = dto.chickens.map((item) => ({
+      name: item.name,
+      type: item.type,
+      price: item.price,
+      address: item.address,
+      phone: item.phone,
+      stock: item.stock ?? 10,
+      spicyLevel: item.spicyLevel ?? 0,
+      updatedAt: nowStr,
+    }));
+
+    const insertedCount = await this.v8.orm.public.Chicken.createAndCount(data, {
+      onConflict: 'skip',
+      conflictOn: ['name'],
+    });
+
+    return {
+      version: 'Prisma ORM v8 (RC)',
+      methodUsed: "db.orm.public.Chicken.createAndCount(data, { onConflict: 'skip' })",
+      insertedCount,
+    };
+  }
+
+  // ==========================================
+  // [수정 및 동시성 제어]
+  // ==========================================
+
+  async update(id: number, dto: UpdateChickenDto): Promise<Chicken> {
+    try {
+      return await this.prisma.chicken.update({
+        where: { id },
+        data: dto,
+      });
+    } catch {
       throw new NotFoundException('해당 치킨집 정보가 존재하지 않습니다.');
     }
-
-    const [deleted] = chickens.splice(index, 1);
-    this.writeData(chickens);
-    return deleted;
   }
 
-  /**
-   * 새 가게 번호를 만듭니다. 가장 큰 id에 1을 더한 값입니다.
-   *
-   * @param chickens - 현재 장부의 치킨집 목록
-   * @returns 부여할 새 id
-   */
-  private nextId(chickens: Chicken[]): number {
-    return chickens.reduce((max, item) => Math.max(max, item.id), 0) + 1;
+  async delete(id: number): Promise<Chicken> {
+    try {
+      return await this.prisma.chicken.delete({
+        where: { id },
+      });
+    } catch {
+      throw new NotFoundException('해당 치킨집 정보가 존재하지 않습니다.');
+    }
+  }
+
+  async updateStockAtomic(id: number, quantity: number): Promise<Chicken> {
+    try {
+      return await this.prisma.chicken.update({
+        where: { id },
+        data: {
+          stock: {
+            decrement: quantity,
+          },
+        },
+      });
+    } catch {
+      throw new NotFoundException('해당 치킨집 정보가 존재하지 않습니다.');
+    }
+  }
+
+  async updateWithOCC(id: number, dto: OccUpdateChickenDto): Promise<Chicken> {
+    const { version, ...updateData } = dto;
+
+    const result = await this.prisma.chicken.updateMany({
+      where: {
+        id,
+        version,
+      },
+      data: {
+        ...updateData,
+        version: {
+          increment: 1,
+        },
+      },
+    });
+
+    if (result.count === 0) {
+      throw new ConflictException(
+        '동시 수정 충돌이 발생했습니다(버전 불일치 또는 데이터 미존재). 최신 데이터를 다시 조회 후 시도해주세요.',
+      );
+    }
+
+    return this.findById(id);
   }
 }

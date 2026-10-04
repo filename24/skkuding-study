@@ -1,0 +1,20 @@
+meta {
+  name: 07-주문 목록 조회 (Prisma v8)
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/order/v8
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /order/v8 — Prisma v8 Order.offset().limit().all() 조회
+
+  **기대: 200 OK**
+
+  `db.orm.public.Order.offset(skip).limit(limit).all()`를 사용하여
+  주문 목록과 하위 주문 상품, 치킨 정보를 조회합니다.
+}

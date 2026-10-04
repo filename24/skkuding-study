@@ -1,0 +1,20 @@
+meta {
+  name: 08-주문 단건 조회 (Prisma v8)
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/order/1/v8
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /order/1/v8 — Prisma v8 Order.where().all().firstOrThrow() 조회
+
+  **기대: 200 OK**
+
+  `db.orm.public.Order.where({ id: 1 }).all().firstOrThrow()`를 사용하여
+  주문 상세 정보 및 관계 데이터를 조회합니다.
+}

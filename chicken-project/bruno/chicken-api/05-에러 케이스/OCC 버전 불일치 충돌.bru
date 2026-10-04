@@ -1,0 +1,31 @@
+meta {
+  name: OCC 버전 불일치 충돌
+  type: http
+  seq: 8
+}
+
+patch {
+  url: {{baseUrl}}/chicken/1/occ
+  body: json
+  auth: none
+}
+
+headers {
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "version": 999,
+    "price": 18500
+  }
+}
+
+docs {
+  # PATCH /chicken/1/occ — OCC 버전 충돌 테스트
+
+  **기대: 409 Conflict**
+
+  DB의 현재 version과 요청한 version(999)이 일치하지 않으므로
+  업데이트된 행 수가 0이 되고, 서비스에서 409 ConflictException을 반환합니다.
+}

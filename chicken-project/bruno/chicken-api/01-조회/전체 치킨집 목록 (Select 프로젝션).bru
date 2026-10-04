@@ -1,0 +1,20 @@
+meta {
+  name: 전체 치킨집 목록 (Select 프로젝션)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/chicken?projection=select
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /chicken?projection=select — 필요한 필드만 가져오기
+
+  **기대: 200 OK**
+
+  `select: { id: true, name: true, price: true, spicyLevel: true }`를 통해
+  불필요한 컬럼(address, phone 등)을 제외하고 필요한 데이터만 조회합니다.
+}

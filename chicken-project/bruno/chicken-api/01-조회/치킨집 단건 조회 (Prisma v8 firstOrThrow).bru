@@ -1,0 +1,20 @@
+meta {
+  name: 치킨집 단건 조회 (Prisma v8 firstOrThrow)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/chicken/1/v8
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /chicken/1/v8 — Prisma v8 firstOrThrow() 조회
+
+  **기대: 200 OK**
+
+  `db.orm.public.Chicken.where({ id: 1 }).all().firstOrThrow()` 호출을 통해 치킨집을 단건 조회합니다.
+  v7의 `findUniqueOrThrow()`와 동일한 목적이지만 체이닝 파이프라인 형태의 문법을 갖습니다.
+}

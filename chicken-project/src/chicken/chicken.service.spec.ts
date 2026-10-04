@@ -1,13 +1,12 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import { ChickenType } from '@prisma/client';
+import { PrismaV8Service } from '../prisma/prisma-v8.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { Chicken, ChickenService } from './chicken.service';
-import { ChickenType, CreateChickenDto } from './dto/create-chicken.dto';
+import { CreateChickenDto } from './dto/create-chicken.dto';
 
-/** 테스트마다 새로 심는 장부 데이터 */
-const SEED_CHICKENS: Chicken[] = [
+const MOCK_CHICKENS: Chicken[] = [
   {
     id: 1,
     name: '성대통닭 율전본점',
@@ -15,6 +14,11 @@ const SEED_CHICKENS: Chicken[] = [
     price: 18000,
     address: '경기 수원시 장안구 율전로108번길 11',
     phone: '031-290-0001',
+    stock: 15,
+    version: 0,
+    spicyLevel: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   },
   {
     id: 2,
@@ -23,119 +27,211 @@ const SEED_CHICKENS: Chicken[] = [
     price: 20000,
     address: '경기 수원시 장안구 서부로 2100',
     phone: '031-290-0002',
+    stock: 10,
+    version: 0,
+    spicyLevel: 2,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   },
 ];
 
-/** 새 치킨집 등록에 쓰는 유효한 주문서 */
 const NEW_CHICKEN: CreateChickenDto = {
   name: 'BBQ 비타민점',
   type: ChickenType.HONEY,
   price: 22000,
   address: '경기 수원시 영통구 매탄로 42',
   phone: '031-290-0004',
+  stock: 12,
+  spicyLevel: 0,
 };
 
-/**
- * 주방장이 다른 장부 파일(임시 파일)을 쓰도록 바꿉니다.
- *
- * 주방장은 `src/data/chickens.json`을 직접 읽고 쓰기 때문에,
- * 테스트가 실제 장부를 건드리지 않도록 매 테스트마다 임시 파일을 가리키게 합니다.
- *
- * @param service - 장부 위치를 바꿀 주방장 인스턴스
- * @param filePath - 대신 사용할 장부 파일 경로
- */
-function useTempDataFile(service: ChickenService, filePath: string): void {
-  (service as unknown as { filePath: string }).filePath = filePath;
-}
-
-/** 임시 장부에 초기 데이터를 심습니다. */
-function seedChickens(filePath: string, chickens: Chicken[]): void {
-  fs.writeFileSync(filePath, JSON.stringify({ chickens }, null, 2), 'utf-8');
-}
-
-describe('ChickenService', () => {
+describe('ChickenService (v7 & v8)', () => {
   let service: ChickenService;
-  let tmpDir: string;
-  let dataFile: string;
+  let mockPrisma: any;
 
   beforeEach(async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chicken-service-'));
-    dataFile = path.join(tmpDir, 'chickens.json');
+    mockPrisma = {
+      chicken: {
+        findMany: jest.fn().mockResolvedValue(MOCK_CHICKENS),
+        findFirst: jest.fn(),
+        count: jest.fn().mockResolvedValue(MOCK_CHICKENS.length),
+        findUnique: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
+        create: jest.fn(),
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+        delete: jest.fn(),
+      },
+    };
 
-    // NestJS 테스트 모듈로 주방장(Provider)만 독립적으로 띄웁니다.
-    // 컨트롤러나 HTTP 요청 없이 주방장 혼자 동작하는지만 검증합니다(= Unit Test).
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ChickenService],
+      providers: [
+        ChickenService,
+        PrismaV8Service,
+        {
+          provide: PrismaService,
+          useValue: mockPrisma,
+        },
+      ],
     }).compile();
 
     service = module.get<ChickenService>(ChickenService);
-    useTempDataFile(service, dataFile);
-    seedChickens(dataFile, SEED_CHICKENS);
   });
 
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
+  describe('findAll (v7 vs v8)', () => {
+    it('[v7] 치킨집 목록과 페이징 정보를 반환한다 (Offset)', async () => {
+      const result = await service.findAll();
 
-  describe('findAll', () => {
-    it('장부에 있는 치킨집 목록 전체를 반환한다', () => {
-      const result = service.findAll();
-
-      expect(Array.isArray(result.chickens)).toBe(true);
       expect(result.chickens).toHaveLength(2);
-      expect(result.chickens[0]).toEqual(SEED_CHICKENS[0]);
+      expect(result.totalCount).toBe(2);
+      expect(result.paginationType).toBe('offset');
+      expect(result.version).toBe('Prisma v7');
+    });
+
+    it('[v7] cursor가 주어지면 Cursor 페이지네이션을 수행한다', async () => {
+      mockPrisma.chicken.findMany.mockResolvedValue([MOCK_CHICKENS[1]]);
+
+      const result = await service.findAll({ cursor: 1, limit: 1 });
+
+      expect(result.paginationType).toBe('cursor');
+      expect(result.chickens).toHaveLength(1);
+      expect(result.nextCursor).toBe(2);
+    });
+
+    it('[v8] findAllV8로 db.orm.public.Chicken.offset().limit().all()을 호출한다', async () => {
+      const result = await service.findAllV8(1, 10);
+
+      expect(result.version).toBe('Prisma ORM v8 (RC)');
+      expect(result.chickens).toHaveLength(2);
+      expect(mockPrisma.chicken.findMany).toHaveBeenCalledWith({
+        skip: 0,
+        take: 10,
+        orderBy: { id: 'asc' },
+      });
     });
   });
 
-  describe('findById', () => {
-    it('id로 치킨집을 찾는다', () => {
-      expect(service.findById(2)).toEqual(SEED_CHICKENS[1]);
+  describe('findById (v7 vs v8)', () => {
+    it('[v7] findUniqueOrThrow를 호출하고 결과를 반환한다', async () => {
+      mockPrisma.chicken.findUniqueOrThrow.mockResolvedValue(MOCK_CHICKENS[0]);
+
+      const chicken = await service.findById(1);
+
+      expect(chicken).toEqual(MOCK_CHICKENS[0]);
+      expect(mockPrisma.chicken.findUniqueOrThrow).toHaveBeenCalledWith({
+        where: { id: 1 },
+      });
     });
 
-    it('존재하지 않는 id로 조회하면 NotFoundException을 발생시킨다', () => {
-      expect(() => service.findById(999)).toThrow(NotFoundException);
+    it('[v7] 존재하지 않는 id로 조회 시 NotFoundException을 발생시킨다', async () => {
+      mockPrisma.chicken.findUniqueOrThrow.mockRejectedValue(new Error('Record not found'));
+
+      await expect(service.findById(999)).rejects.toThrow(NotFoundException);
+    });
+
+    it('[v8] findByIdV8로 where().all().firstOrThrow()를 호출하고 결과를 반환한다', async () => {
+      mockPrisma.chicken.findFirst.mockResolvedValue(MOCK_CHICKENS[0]);
+
+      const result = await service.findByIdV8(1);
+
+      expect(result.version).toBe('Prisma ORM v8 (RC)');
+      expect(result.chicken).toEqual(MOCK_CHICKENS[0]);
+    });
+
+    it('[v8] 존재하지 않는 id로 조회 시 RUNTIME.NO_ROWS(404) 에러를 발생시킨다', async () => {
+      mockPrisma.chicken.findFirst.mockResolvedValue(null);
+
+      await expect(service.findByIdV8(999)).rejects.toThrow(NotFoundException);
     });
   });
 
-  describe('create', () => {
-    it('새 치킨집을 등록하고 서버가 id를 자동으로 붙인다', () => {
-      const created = service.create(NEW_CHICKEN);
+  describe('create (v7 vs v8)', () => {
+    it('[v7] 새 치킨집을 data 래퍼로 등록한다', async () => {
+      mockPrisma.chicken.findUnique.mockResolvedValue(null);
+      mockPrisma.chicken.create.mockResolvedValue({ id: 3, ...NEW_CHICKEN });
 
-      expect(created).toEqual({ id: 3, ...NEW_CHICKEN });
-      expect(service.findAll().chickens).toHaveLength(3);
+      const result = await service.create(NEW_CHICKEN);
+
+      expect(result.id).toBe(3);
+      expect(mockPrisma.chicken.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ name: NEW_CHICKEN.name }),
+      });
     });
 
-    it('같은 상호의 치킨집을 등록하면 ConflictException을 발생시킨다', () => {
-      expect(() => service.create(NEW_CHICKEN)).not.toThrow();
+    it('[v8] createV8로 data 래퍼 없이 직접 객체를 전달하여 등록한다', async () => {
+      mockPrisma.chicken.findUnique.mockResolvedValue(null);
+      mockPrisma.chicken.create.mockResolvedValue({ id: 3, ...NEW_CHICKEN });
 
-      expect(() => service.create(NEW_CHICKEN)).toThrow(ConflictException);
+      const result = await service.createV8(NEW_CHICKEN);
+
+      expect(result.version).toBe('Prisma ORM v8 (RC)');
+      expect(result.chicken.id).toBe(3);
     });
   });
 
-  describe('update', () => {
-    it('보낸 필드만 골라서 수정한다', () => {
-      const updated = service.update(1, { price: 19000 });
+  describe('createBatch (v7 vs v8)', () => {
+    it('[v7] createMany({ skipDuplicates: true })를 호출한다', async () => {
+      const result = await service.createBatch({ chickens: [NEW_CHICKEN] });
+
+      expect(result.version).toBe('Prisma v7');
+      expect(result.count).toBe(2);
+      expect(mockPrisma.chicken.createMany).toHaveBeenCalledWith({
+        data: expect.any(Array),
+        skipDuplicates: true,
+      });
+    });
+
+    it('[v8] createBatchV8로 createAndCount({ onConflict: "skip" })를 호출한다', async () => {
+      const result = await service.createBatchV8({ chickens: [NEW_CHICKEN] });
+
+      expect(result.version).toBe('Prisma ORM v8 (RC)');
+      expect(result.insertedCount).toBe(2);
+    });
+  });
+
+  describe('updateStockAtomic', () => {
+    it('원자적으로 재고 수량을 차감한다', async () => {
+      mockPrisma.chicken.update.mockResolvedValue({
+        ...MOCK_CHICKENS[0],
+        stock: 13,
+      });
+
+      const updated = await service.updateStockAtomic(1, 2);
+
+      expect(updated.stock).toBe(13);
+      expect(mockPrisma.chicken.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: {
+          stock: {
+            decrement: 2,
+          },
+        },
+      });
+    });
+  });
+
+  describe('updateWithOCC', () => {
+    it('버전이 일치하면 수정을 반영하고 버전을 증가시킨다', async () => {
+      mockPrisma.chicken.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.chicken.findUniqueOrThrow.mockResolvedValue({
+        ...MOCK_CHICKENS[0],
+        price: 19000,
+        version: 1,
+      });
+
+      const updated = await service.updateWithOCC(1, { version: 0, price: 19000 });
 
       expect(updated.price).toBe(19000);
-      expect(updated.name).toBe(SEED_CHICKENS[0].name);
-      expect(updated.phone).toBe(SEED_CHICKENS[0].phone);
+      expect(updated.version).toBe(1);
     });
 
-    it('존재하지 않는 id를 수정하면 NotFoundException을 발생시킨다', () => {
-      expect(() => service.update(999, { price: 19000 })).toThrow(NotFoundException);
-    });
-  });
+    it('버전이 일치하지 않아 updateCount가 0이면 ConflictException을 발생시킨다', async () => {
+      mockPrisma.chicken.updateMany.mockResolvedValue({ count: 0 });
 
-  describe('delete', () => {
-    it('치킨집을 삭제하고 삭제된 정보를 반환한다', () => {
-      const deleted = service.delete(1);
-
-      expect(deleted).toEqual(SEED_CHICKENS[0]);
-      expect(service.findAll().chickens).toHaveLength(1);
-    });
-
-    it('존재하지 않는 id를 삭제하면 NotFoundException을 발생시킨다', () => {
-      expect(() => service.delete(999)).toThrow(NotFoundException);
+      await expect(
+        service.updateWithOCC(1, { version: 99, price: 19000 }),
+      ).rejects.toThrow(ConflictException);
     });
   });
 });

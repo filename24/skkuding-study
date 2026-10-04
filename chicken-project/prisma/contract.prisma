@@ -1,0 +1,63 @@
+// use prisma-8
+// Prisma ORM v8 (RC) 스키마 계약서 (contract.prisma).
+//
+// [v7 schema.prisma 대비 변화점]
+// 1. 파일명이 schema.prisma에서 contract.prisma로 변경되었습니다.
+// 2. datasource와 generator 블록이 contract.prisma에서 완전히 제거되었으며,
+//    연결 정보 및 생성 설정은 prisma.config.ts에서 중앙 집중 관리됩니다.
+// 3. PostgreSQL native enum을 유지하기 위해 native_enum과 pg.enum() 구문을 사용합니다.
+//    (v8의 기본 enum은 text 컬럼으로 매핑됩니다)
+// 4. 클라이언트 생성 명령어: pnpm prisma contract emit
+
+native_enum ChickenType {
+  FRIED = "FRIED"
+  SEASONED = "SEASONED"
+  SOY = "SOY"
+  GARLIC = "GARLIC"
+  HONEY = "HONEY"
+}
+
+native_enum OrderStatus {
+  PENDING = "PENDING"
+  COMPLETED = "COMPLETED"
+  CANCELLED = "CANCELLED"
+}
+
+model Chicken {
+  id         Int                  @id @default(autoincrement())
+  name       String               @unique
+  type       pg.enum(ChickenType)
+  price      Int
+  address    String
+  phone      String
+  stock      Int                  @default(10)
+  version    Int                  @default(0)
+  spicyLevel Int                  @default(0)
+  createdAt  TimestampString      @default(now())
+  updatedAt  TimestampString      @default(now())
+
+  orderItems OrderItem[]
+}
+
+model Order {
+  id         Int                  @id @default(autoincrement())
+  customerId String
+  status     pg.enum(OrderStatus) @default("PENDING")
+  totalPrice Int                  @default(0)
+  createdAt  TimestampString      @default(now())
+  updatedAt  TimestampString      @default(now())
+
+  items      OrderItem[]
+}
+
+model OrderItem {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  chickenId Int
+  quantity  Int
+  price     Int
+  createdAt TimestampString @default(now())
+
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  chicken   Chicken  @relation(fields: [chickenId], references: [id])
+}

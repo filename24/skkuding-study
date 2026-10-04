@@ -1,0 +1,20 @@
+meta {
+  name: 전체 치킨집 목록 (Prisma v8)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/chicken/v8
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /chicken/v8 — Prisma v8 all() 조회
+
+  **기대: 200 OK**
+
+  `db.orm.public.Chicken.all()` 호출을 통해 전체 치킨집을 조회합니다.
+  v7의 `prisma.chicken.findMany()`와 결과 및 문법 차이를 비교할 수 있습니다.
+}

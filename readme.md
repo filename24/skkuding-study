@@ -8,10 +8,11 @@
 
 - 브랜치 이름 규칙: `day-n-스터디이름` (필요시 `-v2`, `-backend` 처럼 세부 주제 추가)
 
-<!-- 스터디가 시작되면 아래에 브랜치 링크를 추가합니다. 예:
-- [day-1-git](https://github.com/사용자/skkuding-study/tree/day-1-git) — git 기초 스터디
-- [day-2-algorithm](https://github.com/사용자/skkuding-study/tree/day-2-algorithm) — 알고리즘 스터디
--->
+- [day-2-nestjs](https://github.com/filename24/skkuding-study/tree/day-2-nestjs) — NestJS 백엔드 스터디 (치킨집 CRUD API)
+- [day-2-nestjs-frontend](https://github.com/filename24/skkuding-study/tree/day-2-nestjs-frontend) — NestJS API 실습용 교육 사이트 (Vite + React)
+- [day-3-nestjs](https://github.com/filename24/skkuding-study/tree/day-3-nestjs) — NestJS 백엔드 스터디 (Guard, Pipe, DTO 검증, 예외, Unit/E2E 테스트)
+- [day-3-nestjs-frontend](https://github.com/filename24/skkuding-study/tree/day-3-nestjs-frontend) — Day 3 실습용 교육 사이트 (Guard·Pipe 흐름과 400/403/404/409 재현)
+- [day-4-prisma](https://github.com/filename24/skkuding-study/tree/day-4-prisma) — Prisma ORM v7 & v8 실전 스터디 (PostgreSQL, 마이그레이션 이력, 관계 및 N+1, 트랜잭션, 원자적 업데이트, OCC, 커서 페이지네이션, v7 & v8 동시 구동 아키텍처)
 
 ## 브랜치 이동 방법
 

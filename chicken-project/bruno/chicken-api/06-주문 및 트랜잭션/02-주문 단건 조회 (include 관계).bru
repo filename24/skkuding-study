@@ -1,0 +1,28 @@
+meta {
+  name: 02-주문 단건 조회 (include 관계)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/order/1
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /order/:id — 주문 상세 조회 (중첩 include)
+
+  **기대: 200 OK**
+
+  ```ts
+  include: {
+    items: {
+      include: {
+        chicken: true,
+      },
+    },
+  }
+  ```
+  주문 뿐만 아니라 주문 상품과 어떤 치킨이 주문되었는지 2단계 관계를 한 번에 조회합니다.
+}

@@ -1,51 +1,90 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, ParseIntPipe, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ChickenService } from './chicken.service';
-import { CreateChickenDto, UpdateChickenDto } from './dto/create-chicken.dto';
+import {
+  BatchCreateChickenDto,
+  CreateChickenDto,
+  OccUpdateChickenDto,
+  QueryChickenDto,
+  UpdateChickenDto,
+  UpdateStockDto,
+} from './dto/create-chicken.dto';
 import { ApiKeyGuard } from './guards/api-key.guard';
 
 /**
- * 카운터 직원(ChickenController).
+ * 치킨집 API 컨트롤러(ChickenController).
  *
- * 손님(요청)을 받아 검증된 주문서를 주방장(ChickenService)에게 넘기고,
- * 처리 결과를 손님에게 돌려주는 역할만 합니다. 실제 비즈니스 로직은 없습니다.
+ * 동일한 비즈니스 로직에 대해 Prisma v7 엔드포인트와
+ * Prisma v8 전용 엔드포인트(/v8)를 함께 제공하여 문법 및 응답 구조를 비교할 수 있습니다.
  */
 @Controller('chicken')
 export class ChickenController {
-  /**
-   * 생성자를 통해 점장님(NestJS)에게 ChickenService 주방장을 배치해달라고 요청합니다.
-   *
-   * @param chickenService - 주문을 실제로 처리할 주방장
-   */
   constructor(private readonly chickenService: ChickenService) {}
 
+  // ==========================================
+  // [조회: v7 findMany vs v8 all()]
+  // ==========================================
+
   /**
-   * GET /chicken — 전체 치킨집 목록 조회
+   * GET /chicken/v8 — Prisma v8 방식으로 전체 목록 조회 (db.orm.public.Chicken.all())
    */
-  @Get()
-  findAll() {
-    return this.chickenService.findAll();
+  @Get('v8')
+  findAllV8(@Query('page') page?: number, @Query('limit') limit?: number) {
+    return this.chickenService.findAllV8(
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 10,
+    );
   }
 
   /**
-   * GET /chicken/:id — 특정 치킨집 조회
-   *
-   * `ParseIntPipe`가 URL의 id를 숫자로 바꿔 줍니다. `/chicken/chicken`처럼
-   * 숫자로 바꿀 수 없는 값이면 컨트롤러에 도달하기 전에 400으로 거절됩니다.
-   *
-   * @param id - URL에서 숫자로 변환된 치킨집 번호
+   * GET /chicken — Prisma v7 방식으로 전체 치킨집 목록 조회
+   */
+  @Get()
+  findAll(@Query() query: QueryChickenDto) {
+    return this.chickenService.findAll(query);
+  }
+
+  /**
+   * GET /chicken/:id/v8 — Prisma v8 방식으로 단건 조회 (.where().all().firstOrThrow())
+   */
+  @Get(':id/v8')
+  findOneV8(@Param('id', ParseIntPipe) id: number) {
+    return this.chickenService.findByIdV8(id);
+  }
+
+  /**
+   * GET /chicken/:id — Prisma v7 방식으로 단건 조회 (findUniqueOrThrow)
    */
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.chickenService.findById(id);
   }
 
+  // ==========================================
+  // [등록: v7 create vs v8 create]
+  // ==========================================
+
   /**
-   * POST /chicken — 신규 치킨집 등록
-   *
-   * `@UseGuards(ApiKeyGuard)`로 출입 검사를 거칩니다. 즉, 직원이 아니면
-   * 주문서 내용과 상관없이 403으로 거절됩니다.
-   *
-   * @param createChickenDto - ValidationPipe 검사를 통과한 등록 주문서
+   * POST /chicken/v8 — Prisma v8 방식으로 신규 등록 (data 래퍼 없이 직접 전달)
+   */
+  @Post('v8')
+  @UseGuards(ApiKeyGuard)
+  createV8(@Body() createChickenDto: CreateChickenDto) {
+    return this.chickenService.createV8(createChickenDto);
+  }
+
+  /**
+   * POST /chicken — Prisma v7 방식으로 신규 등록 (data 래퍼 사용)
    */
   @Post()
   @UseGuards(ApiKeyGuard)
@@ -53,23 +92,59 @@ export class ChickenController {
     return this.chickenService.create(createChickenDto);
   }
 
+  // ==========================================
+  // [대량 등록: v7 createMany vs v8 createAll / createAndCount]
+  // ==========================================
+
   /**
-   * PATCH /chicken/:id — 치킨집 정보 일부 수정
-   *
-   * @param id - 수정할 치킨집 번호
-   * @param updateChickenDto - 바꿀 값만 담은 수정 주문서
+   * POST /chicken/batch/v8 — Prisma v8 대량 등록 (createAndCount with onConflict: 'skip')
    */
-  @Patch(':id')
+  @Post('batch/v8')
   @UseGuards(ApiKeyGuard)
-  update(@Param('id', ParseIntPipe) id: number, @Body() updateChickenDto: UpdateChickenDto) {
-    return this.chickenService.update(id, updateChickenDto);
+  createBatchV8(@Body() batchDto: BatchCreateChickenDto) {
+    return this.chickenService.createBatchV8(batchDto);
   }
 
   /**
-   * DELETE /chicken/:id — 치킨집 삭제
-   *
-   * @param id - 삭제할 치킨집 번호
+   * POST /chicken/batch — Prisma v7 대량 등록 (createMany with skipDuplicates: true)
    */
+  @Post('batch')
+  @UseGuards(ApiKeyGuard)
+  createBatch(@Body() batchDto: BatchCreateChickenDto) {
+    return this.chickenService.createBatch(batchDto);
+  }
+
+  // ==========================================
+  // [수정 및 동시성 제어]
+  // ==========================================
+
+  @Patch(':id')
+  @UseGuards(ApiKeyGuard)
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateChickenDto: UpdateChickenDto,
+  ) {
+    return this.chickenService.update(id, updateChickenDto);
+  }
+
+  @Patch(':id/stock')
+  @UseGuards(ApiKeyGuard)
+  updateStock(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() stockDto: UpdateStockDto,
+  ) {
+    return this.chickenService.updateStockAtomic(id, stockDto.quantity);
+  }
+
+  @Patch(':id/occ')
+  @UseGuards(ApiKeyGuard)
+  updateOCC(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() occDto: OccUpdateChickenDto,
+  ) {
+    return this.chickenService.updateWithOCC(id, occDto);
+  }
+
   @Delete(':id')
   @UseGuards(ApiKeyGuard)
   delete(@Param('id', ParseIntPipe) id: number) {

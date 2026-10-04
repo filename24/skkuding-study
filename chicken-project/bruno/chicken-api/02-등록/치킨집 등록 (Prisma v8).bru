@@ -1,0 +1,36 @@
+meta {
+  name: 치킨집 등록 (Prisma v8)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/chicken/v8
+  body: json
+  auth: none
+}
+
+headers {
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "BHC 성대자연과학캠퍼스점",
+    "type": "FRIED",
+    "price": 21000,
+    "address": "경기 수원시 장안구 서부로 2066",
+    "phone": "031-290-9999",
+    "stock": 10,
+    "spicyLevel": 1
+  }
+}
+
+docs {
+  # POST /chicken/v8 — Prisma v8 신규 치킨집 등록
+
+  **기대: 201 Created**
+
+  v7의 `{ data: { ... } }` 래퍼 없이 `db.orm.public.Chicken.create(...)`로
+  객체를 직접 인자로 전달하여 레코드를 생성합니다.
+}

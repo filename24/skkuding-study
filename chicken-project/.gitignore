@@ -4,3 +4,11 @@ coverage
 .env
 *.log
 *.tsbuildinfo
+.agents
+.claude
+.cursor
+.devin
+skills-lock.json
+
+
+generated

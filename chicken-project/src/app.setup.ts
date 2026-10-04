@@ -1,4 +1,5 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { PrismaClientExceptionFilter } from './prisma/prisma-client-exception.filter';
 
 /**
  * 앱 전역 설정을 적용합니다.
@@ -12,6 +13,9 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 export function setupApp(app: INestApplication): void {
   // 프론트엔드(브라우저)에서 이 서버의 API를 호출할 수 있도록 CORS 허용
   app.enableCors();
+
+  // Prisma 예외를 NestJS HTTP 예외(404, 409 등)로 매핑
+  app.useGlobalFilters(new PrismaClientExceptionFilter());
 
   // 주문서(DTO)에 적힌 검사 규칙을 모든 요청에 적용합니다.
   // - whitelist: DTO에 선언되지 않은 필드는 조용히 잘라냅니다.

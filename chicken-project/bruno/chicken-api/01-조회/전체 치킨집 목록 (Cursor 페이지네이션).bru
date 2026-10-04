@@ -1,0 +1,20 @@
+meta {
+  name: 전체 치킨집 목록 (Cursor 페이지네이션)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/chicken?cursor=1&limit=2
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /chicken?cursor=1&limit=2 — 커서 페이지네이션
+
+  **기대: 200 OK**
+
+  ID가 1인 치킨 다음 행부터 2개를 가져옵니다.
+  Offset 페이지네이션처럼 수많은 행을 skip하지 않고 index를 직접 타므로 대용량 데이터에서도 성능이 일정합니다.
+}

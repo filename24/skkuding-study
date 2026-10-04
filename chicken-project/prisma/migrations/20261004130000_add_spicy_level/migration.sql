@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Chicken" ADD COLUMN "spicyLevel" INTEGER NOT NULL DEFAULT 0;

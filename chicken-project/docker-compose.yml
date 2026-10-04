@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chicken-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chicken_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - chicken-pgdata:/var/lib/postgresql/data
+
+volumes:
+  chicken-pgdata:

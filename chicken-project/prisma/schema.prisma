@@ -1,0 +1,70 @@
+// Day 4 Prisma 스터디 스키마
+// 치킨집(Chicken), 주문(Order), 주문 항목(OrderItem) 간의 관계 및
+// 동시성(OCC version, stock), 마이그레이션(spicyLevel) 실습을 위한 스키마입니다.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 치킨 메뉴 종류 열거형
+enum ChickenType {
+  FRIED
+  SEASONED
+  SOY
+  GARLIC
+  HONEY
+}
+
+// 주문 상태 열거형
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+// 치킨집 모델
+model Chicken {
+  id         Int         @id @default(autoincrement())
+  name       String      @unique
+  type       ChickenType
+  price      Int
+  address    String
+  phone      String
+  stock      Int         @default(10) // 동시성 원자적 업데이트(Atomic decrement) 실습용
+  version    Int         @default(0)  // 낙관적 동시성 제어(OCC) 실습용 버전 필드
+  spicyLevel Int         @default(0)  // 마이그레이션 실습용 추가 필드
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  orderItems OrderItem[]
+}
+
+// 주문 모델
+model Order {
+  id         Int         @id @default(autoincrement())
+  customerId String      // 주문 고객 ID (예: "customer-1")
+  status     OrderStatus @default(PENDING)
+  totalPrice Int         @default(0)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  items      OrderItem[] // 1:N 관계 (주문 -> 주문 항목들)
+}
+
+// 주문 항목 모델
+model OrderItem {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  chickenId Int
+  quantity  Int
+  price     Int      // 주문 시점의 치킨 가격
+  createdAt DateTime @default(now())
+
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  chicken   Chicken  @relation(fields: [chickenId], references: [id])
+}

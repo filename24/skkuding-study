@@ -1,0 +1,44 @@
+meta {
+  name: 01-주문 생성 ($transaction)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/order
+  body: json
+  auth: none
+}
+
+headers {
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "customerId": "customer-skku",
+    "items": [
+      {
+        "chickenId": 1,
+        "quantity": 2
+      },
+      {
+        "chickenId": 2,
+        "quantity": 1
+      }
+    ]
+  }
+}
+
+docs {
+  # POST /order — 주문 생성 ($transaction)
+
+  **기대: 201 Created**
+
+  Prisma `$transaction` 안에서:
+  1. 각 치킨의 재고 확인
+  2. 재고 원자적 차감 (`stock: { decrement: quantity }`)
+  3. Order 생성
+  4. OrderItem 생성
+  을 하나의 단위로 묶어 처리합니다.
+}

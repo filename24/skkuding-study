@@ -1,0 +1,37 @@
+meta {
+  name: 재고 부족 주문 실패
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/order
+  body: json
+  auth: none
+}
+
+headers {
+  x-api-key: {{apiKey}}
+}
+
+body:json {
+  {
+    "customerId": "greedy-customer",
+    "items": [
+      {
+        "chickenId": 1,
+        "quantity": 99999
+      }
+    ]
+  }
+}
+
+docs {
+  # POST /order — 재고 부족 주문 실패
+
+  **기대: 400 Bad Request**
+
+  남아 있는 치킨 재고보다 많은 양을 주문하면
+  트랜잭션 내부에서 BadRequestException이 발생하고
+  앞선 모든 변경 사항이 rollback됩니다.
+}

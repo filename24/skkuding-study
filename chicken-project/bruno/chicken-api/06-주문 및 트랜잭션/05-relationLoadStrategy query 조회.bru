@@ -1,0 +1,20 @@
+meta {
+  name: 05-relationLoadStrategy query 조회
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/order/study/strategy?strategy=query&limit=5
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /order/study/strategy?strategy=query — relationLoadStrategy 'query'
+
+  **기대: 200 OK**
+
+  Prisma v7의 `relationLoadStrategy: 'query'` 전략을 사용하여
+  Order 조회 쿼리와 OrderItem 조회 쿼리를 별개로 보낸 뒤, 애플리케이션 레벨에서 조합합니다.
+}

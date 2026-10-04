@@ -1,0 +1,20 @@
+meta {
+  name: 03-N+1 문제 재현 조회
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/order/study/n-plus-one?limit=5
+  body: none
+  auth: none
+}
+
+docs {
+  # GET /order/study/n-plus-one?limit=5 — N+1 문제 시뮬레이션
+
+  **기대: 200 OK**
+
+  주문 5건을 먼저 가져온 뒤, 반복문을 돌며 각 주문의 OrderItem을 건별로 조회합니다.
+  결과적으로 주문 조회 1회 + 주문상품 조회 5회 = 총 6번의 쿼리가 발생합니다.
+}
